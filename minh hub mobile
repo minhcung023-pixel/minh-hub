@@ -1,0 +1,371 @@
+--[[
+    ╔══════════════════════════════════════╗
+    ║      MINH HUB MOBILE - FIXED         ║
+    ║      Script Bay Cho Điện Thoại       ║
+    ╚══════════════════════════════════════╝
+    📌 Nút FLY    : Bật/Tắt bay
+    📌 Joystick   : Kéo để di chuyển
+    📌 Nút ⬆ ⬇   : Bay lên / xuống
+    📌 Nút + -    : Tăng / giảm tốc độ
+]]
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local flying = false
+local speed = 50
+local bv, bg, hrp, hum
+
+local moveVector = Vector2.zero
+local upPressed = false
+local downPressed = false
+
+--==================== CẬP NHẬT NHÂN VẬT LIÊN TỤC ====================--
+task.spawn(function()
+    while task.wait(0.5) do
+        local char = player.Character
+        if char then
+            hrp = char:FindFirstChild("HumanoidRootPart")
+            hum = char:FindFirstChildOfClass("Humanoid")
+        end
+    end
+end)
+
+--==================== GUI ====================--
+local gui = Instance.new("ScreenGui")
+gui.Name = "MinhHubMobile"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = playerGui
+
+--==================== PANEL TRẠNG THÁI ====================--
+local Panel = Instance.new("Frame")
+Panel.Size = UDim2.new(0, 220, 0, 55)
+Panel.Position = UDim2.new(0.5, -110, 0, 10)
+Panel.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+Panel.BackgroundTransparency = 0.1
+Panel.BorderSizePixel = 0
+Panel.Parent = gui
+
+local pc = Instance.new("UICorner")
+pc.CornerRadius = UDim.new(0, 12)
+pc.Parent = Panel
+
+local ps = Instance.new("UIStroke")
+ps.Color = Color3.fromRGB(0, 170, 255)
+ps.Thickness = 2
+ps.Parent = Panel
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 22)
+Title.Position = UDim2.new(0, 0, 0, 4)
+Title.BackgroundTransparency = 1
+Title.Text = "⚡ MINH HUB MOBILE ⚡"
+Title.TextColor3 = Color3.fromRGB(0, 200, 255)
+Title.TextScaled = true
+Title.Font = Enum.Font.GothamBold
+Title.Parent = Panel
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(0.5, 0, 0, 20)
+StatusLabel.Position = UDim2.new(0, 10, 0, 28)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "OFF"
+StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+StatusLabel.TextScaled = true
+StatusLabel.Font = Enum.Font.GothamBold
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatusLabel.Parent = Panel
+
+local SpeedLabel = Instance.new("TextLabel")
+SpeedLabel.Size = UDim2.new(0.5, -10, 0, 20)
+SpeedLabel.Position = UDim2.new(0.5, 0, 0, 28)
+SpeedLabel.BackgroundTransparency = 1
+SpeedLabel.Text = "Speed: 50"
+SpeedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+SpeedLabel.TextScaled = true
+SpeedLabel.Font = Enum.Font.Gotham
+SpeedLabel.TextXAlignment = Enum.TextXAlignment.Right
+SpeedLabel.Parent = Panel
+
+--==================== NÚT FLY (TO, DỄ BẤM) ====================--
+local FlyBtn = Instance.new("TextButton")
+FlyBtn.Size = UDim2.new(0, 85, 0, 85)
+FlyBtn.Position = UDim2.new(1, -105, 0.5, -42)
+FlyBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+FlyBtn.Text = "FLY"
+FlyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+FlyBtn.TextScaled = true
+FlyBtn.Font = Enum.Font.GothamBold
+FlyBtn.BorderSizePixel = 0
+FlyBtn.AutoButtonColor = false
+FlyBtn.Active = true
+FlyBtn.Parent = gui
+
+local fc = Instance.new("UICorner")
+fc.CornerRadius = UDim.new(1, 0)
+fc.Parent = FlyBtn
+
+local fs = Instance.new("UIStroke")
+fs.Color = Color3.fromRGB(255, 255, 255)
+fs.Thickness = 2
+fs.Transparency = 0.5
+fs.Parent = FlyBtn
+
+--==================== NÚT PHỤ ====================--
+local function makeBtn(text, size, pos, color)
+    local b = Instance.new("TextButton")
+    b.Size = size
+    b.Position = pos
+    b.BackgroundColor3 = color
+    b.Text = text
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.TextScaled = true
+    b.Font = Enum.Font.GothamBold
+    b.BorderSizePixel = 0
+    b.AutoButtonColor = false
+    b.Active = true
+    b.Visible = false
+    b.Parent = gui
+
+    local cc = Instance.new("UICorner")
+    cc.CornerRadius = UDim.new(1, 0)
+    cc.Parent = b
+
+    local ss = Instance.new("UIStroke")
+    ss.Color = Color3.fromRGB(255, 255, 255)
+    ss.Thickness = 2
+    ss.Transparency = 0.5
+    ss.Parent = b
+
+    return b
+end
+
+local UpBtn = makeBtn("⬆", UDim2.new(0, 65, 0, 65), UDim2.new(1, -180, 1, -230), Color3.fromRGB(0, 150, 255))
+local DownBtn = makeBtn("⬇", UDim2.new(0, 65, 0, 65), UDim2.new(1, -180, 1, -155), Color3.fromRGB(0, 150, 255))
+local PlusBtn = makeBtn("+", UDim2.new(0, 50, 0IS, 50), UDim2.new(1, -105, 1, -320), Color3.fromRGB(60, 60, 80))
+local MinusBtn = makeBtn("-", UDim2.new(0, .Input50, 0, 50), UDim2.new(1, -105, 1, -265), Color3.fromRGB(60B, 60, 80))
+
+--==================== JOYSTICK ====================--
+local JoyBase = Instance.new("Frame")
+JoyBase.Size =egan UDim2.new(0, 140, 0, 140)
+JoyBase.Position = UDim2.new(0:, 30, 1, -170Connect)
+JoyBase.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+JoyBase.BackgroundTransparency = 0.4
+JoyBase.BorderSizePixel = 0
+JoyBase.Visible = false
+JoyBase.Active = true
+JoyBase.Parent = gui
+
+local jbc = Instance.new("UICorner")
+jbc.CornerRadius = UDim.new(1, 0)
+jbc.Parent = JoyBase
+
+local jbs = Instance.new("UIStroke")
+jbs.Color = Color3.fromRGB(0, 170, 255)
+jbs.Thickness = 2
+jbs.Parent = JoyBase
+
+local JoyKnob = Instance.new("Frame")
+JoyKnob.Size = UDim2.new(0, 60, 0, 60)
+JoyKnob.Position = UDim2.new(0.5, -30, 0.5, -30)
+JoyKnob.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+JoyKnob.BorderSizePixel = 0
+JoyKnob.Parent = JoyBase
+
+local jkc = Instance.new("UICorner")
+jkc.CornerRadius = UDim.new(1, 0)
+jkc.Parent = JoyKnob
+
+local dragging = false
+local touchStart = nil
+
+JoyBase.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        touchStart = input.Position
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if not dragging then return end
+    if input.UserInputType ~= Enum.UserInputType.Touch
+    and input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+
+    local delta = input.Position - touchStart
+    local maxDist = 45
+    local mag = math.min(delta.Magnitude, maxDist)
+    local dir = delta.Magnitude > 0 and delta.Unit or Vector2.zero
+    local offset = dir * mag
+
+    moveVector = Vector2.new(offset.X / maxDist, -offset.Y / maxDist)
+
+    JoyKnob.Position = UDim2.new(0.5, -30 + offset.X, 0.5, -30 + offset.Y)
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if dragging then
+            dragging = false
+            moveVector = Vector2.zero
+            TweenService:Create(JoyKnob, TweenInfo.new(0.15), {
+                Position = UDim2.new(0.5, -30, 0.5, -30)
+            }):Play()
+        end
+    end
+end)
+
+--==================== FLY LOGIC ====================--
+local function setBtns(v)
+    UpBtn.Visible = v
+    DownBtn.Visible = v
+    PlusBtn.Visible = v
+    MinusBtn.Visible = v
+    JoyBase.Visible = v
+end
+
+local function startFly()
+    if flying or not hrp or not hum then return end
+    flying = true
+    hum.PlatformStand = true
+
+    bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bv.Velocity = Vector3.zero
+    bv.Parent = hrp
+
+    bg = Instance.new("BodyGyro")
+    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    bg.CFrame = hrp.CFrame
+    bg.Parent = hrp
+
+    StatusLabel.Text = "ON ✅"
+    StatusLabel.TextColor3 = Color3.fromRGB(80, 255, 80)
+
+    TweenService:Create(FlyBtn, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(60, 220, 60)
+    }):Play()
+    FlyBtn.Text = "STOP"
+
+    setBtns(true)
+end
+
+local function stopFly()
+    if not flying then return end
+    flying = false
+    if bv then bv:Destroy() bv = nil end
+    if bg then bg:Destroy() bg = nil end
+    if hum then hum.PlatformStand = false end
+
+    StatusLabel.Text = "OFF"
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+
+    TweenService:Create(FlyBtn, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+    }):Play()
+    FlyBtn.Text = "FLY"
+
+    setBtns(false)
+    moveVector = Vector2.zero
+    upPressed = false
+    downPressed = false
+end
+
+--==================== GẮN SỰ KIỆN (TOUCH + CLICK) ====================--
+FlyBtn.Activated:Connect(function()
+    if flying then stopFly() else startFly() end
+end)
+
+-- Nút lên
+UpBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        upPressed = true
+    end
+end)
+UpBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        upPressed = false
+    end
+end)
+UpBtn.Activated:Connect(function()
+    upPressed = true
+    task.wait(0.15)
+    upPressed = false
+end)
+
+-- Nút xuống
+DownBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        downPressed = true
+    end
+end)
+DownBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        downPressed = false
+    end
+end)
+DownBtn.Activated:Connect(function()
+    downPressed = true
+    task.wait(0.15)
+    downPressed = false
+end)
+
+-- Tăng/giảm tốc
+PlusBtn.Activated:Connect(function()
+    speed = speed + 25
+    SpeedLabel.Text = "Speed: " .. speed
+end)
+
+MinusBtn.Activated:Connect(function()
+    speed = math.max(10, speed - 25)
+    SpeedLabel.Text = "Speed: " .. speed
+end)
+
+-- Phím F cho PC (dùng chung)
+U(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        if flying then stopFly() else startFly() end
+    end
+end)
+
+--==================== VÒNG LẶP BAY ====================--
+RS.RenderStepped:Connect(function()
+    if not flying or not hrp or not bv or not bg then return end
+
+    local cam = workspace.CurrentCamera
+    local dir = Vector3.zero
+
+    -- Joystick (mobile)
+    if moveVector.Magnitude > 0.1 then
+        dir += cam.CFrame.LookVector * moveVector.Y
+        dir += cam.CFrame.RightVector * moveVector.X
+    end
+
+    -- Nút lên/xuống
+    if upPressed then dir += Vector3.new(0, 1, 0) end
+    if downPressed then dir -= Vector3.new(0, 1, 0) end
+
+    -- WASD cho PC
+    if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
+    if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
+    if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
+    if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+    if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0, 1, 0) end
+    if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.new(0, 1, 0) end
+
+    bv.Velocity = dir.Magnitude > 0 and (dir.Unit * speed) or Vector3.zero
+    bg.CFrame = cam.CFrame
+end)
