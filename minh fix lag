@@ -1,0 +1,412 @@
+--[[
+    ================================================================
+    Script : minh fix lag (v11)
+    Môi trường : Roblox / Delta Executor (PC + iOS + Android)
+    Chức năng :
+        - Làm phẳng texture/vật liệu để giảm tải render
+        - Tắt đèn, particle, bóng đổ không cần thiết
+        - Lưu trạng thái gốc, khôi phục hoàn toàn khi tắt
+        - Bật/tắt: phím F (PC) hoặc nút nổi kéo được (mobile)
+    ================================================================
+]]
+
+-- ================= KIỂM TRA MÔI TRƯỜNG =================
+if not game or not game.GetService then
+    warn("[minh fix lag] Không phải Roblox. Dừng.")
+    return
+end
+
+local ok_ws, Workspace = pcall(function() return game:GetService("Workspace") end)
+if not ok_ws then
+    warn("[minh fix lag] Không truy cập Workspace. Executor bị chặn?")
+    return
+end
+
+local Lighting         = game:GetService("Lighting")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    warn("[minh fix lag] Chưa có LocalPlayer. Vào game hoàn toàn rồi chạy lại.")
+    return
+end
+
+-- ================= CẤU HÌNH =================
+local CONFIG = {
+    ToggleKey     = Enum.KeyCode.F,
+    BatchSize     = 300,
+    DragThreshold = 8,
+    ButtonSize    = UDim2.new(0, 120, 0, 44),
+    ButtonPos     = UDim2.new(0, 20, 0.5, -22),
+    GuiName       = "MinhFixLagGui",
+    Debug         = true,
+    LogLimit      = 20,
+}
+
+-- ================= TRẠNG THÁI =================
+local state = {
+    enabled       = true,
+    busy          = false,
+    parts         = {},
+    lights        = {},
+    particles     = {},
+    lightingProps = nil,
+    qualityLevel  = nil,
+    updateBtn     = nil,
+    stats         = { parts = 0, lights = 0, particles = 0, failed = 0 },
+    logCount      = 0,
+}
+
+-- ================= HELPERS =================
+local function log(...)
+    if CONFIG.Debug and state.logCount < CONFIG.LogLimit then
+        state.logCount += 1
+        print("[minh fix lag]", ...)
+    end
+end
+
+local function safe(fn, ...)
+    local ok, err = pcall(fn, ...)
+    if not ok then
+        state.stats.failed += 1
+        if CONFIG.Debug and state.logCount < CONFIG.LogLimit then
+            state.logCount += 1
+            warn("[minh fix lag] Lỗi:", err)
+        end
+    end
+    return ok
+end
+
+local function isAnyPlayerCharacter(part)
+    local model = part:FindFirstAncestorOfClass("Model")
+    while model do
+        if Players:GetPlayerFromCharacter(model) then return true end
+        model = model:FindFirstAncestorOfClass("Model")
+    end
+    return false
+end
+
+-- ================= PART =================
+local function flattenPart(part)
+    if not part:IsA("BasePart") then return end
+    if isAnyPlayerCharacter(part) then return end
+
+    local isNew = false
+    if not state.parts[part] then
+        isNew = true
+        local childData = {}
+        for _, child in ipairs(part:GetChildren()) do
+            if child:IsA("Texture") or child:IsA("Decal") then
+                childData[child] = child.Transparency
+            end
+        end
+        state.parts[part] = {
+            Material    = part.Material,
+            Reflectance = part.Reflectance,
+            CastShadow  = part.CastShadow,
+            children    = childData,
+        }
+    end
+
+    safe(function()
+        part.Material    = Enum.Material.SmoothPlastic
+        part.Reflectance = 0
+        part.CastShadow  = false
+        for _, child in ipairs(part:GetChildren()) do
+            if child:IsA("Texture") or child:IsA("Decal") then
+                child.Transparency = 1
+            end
+        end
+    end)
+
+    if isNew then state.stats.parts += 1 end
+end
+
+local function restorePart(part)
+    local data = state.parts[part]
+    if not data then return end
+    safe(function()
+        part.Material    = data.Material
+        part.Reflectance = data.Reflectance
+        part.CastShadow  = data.CastShadow
+        for child, t in pairs(data.children) do
+            if child and child.Parent then
+                child.Transparency = t
+            end
+        end
+    end)
+    state.parts[part] = nil
+end
+
+-- ================= LIGHTING =================
+local function applyLighting()
+    if not state.lightingProps then
+        state.lightingProps = {
+            GlobalShadows = Lighting.GlobalShadows,
+            FogEnd        = Lighting.FogEnd,
+            Brightness    = Lighting.Brightness,
+        }
+    end
+    safe(function()
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd        = 9e9
+        Lighting.Brightness    = 1
+    end)
+end
+
+local function restoreLighting()
+    if not state.lightingProps then return end
+    safe(function()
+        Lighting.GlobalShadows = state.lightingProps.GlobalShadows
+        Lighting.FogEnd        = state.lightingProps.FogEnd
+        Lighting.Brightness    = state.lightingProps.Brightness
+    end)
+    state.lightingProps = nil
+end
+
+-- ================= APPLY / RESTORE =================
+local function applyAll()
+    if state.busy then return end
+    state.busy    = true
+    state.enabled = true
+    state.stats   = { parts = 0, lights = 0, particles = 0, failed = 0 }
+
+    applyLighting()
+
+    safe(function()
+        for _, obj in ipairs(Lighting:GetDescendants()) do
+            if obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+                if state.lights[obj] == nil then
+                    state.lights[obj] = obj.Enabled
+                end
+                obj.Enabled = false
+                state.stats.lights += 1
+            end
+        end
+    end)
+
+    local processed = 0
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if not state.enabled then break end
+        if obj:IsA("BasePart") then
+            flattenPart(obj)
+        elseif obj:IsA("ParticleEmitter") then
+            if state.particles[obj] == nil then
+                state.particles[obj] = obj.Enabled
+            end
+            obj.Enabled = false
+            state.stats.particles += 1
+        end
+        processed += 1
+        if processed % CONFIG.BatchSize == 0 then
+            RunService.Heartbeat:Wait()
+        end
+    end
+
+    state.busy = false
+    log(string.format("BẬT: %d part, %d đèn, %d particle, %d lỗi",
+        state.stats.parts, state.stats.lights, state.stats.particles, state.stats.failed))
+end
+
+local function restoreAll()
+    if state.busy then return end
+    state.busy    = true
+    state.enabled = false
+
+    for part in pairs(state.parts) do
+        if part and part.Parent then restorePart(part) end
+    end
+    state.parts = {}
+
+    for light, enabled in pairs(state.lights) do
+        if light and light.Parent then safe(function() light.Enabled = enabled end) end
+    end
+    state.lights = {}
+
+    for particle, enabled in pairs(state.particles) do
+        if particle and particle.Parent then safe(function() particle.Enabled = enabled end) end
+    end
+    state.particles = {}
+
+    restoreLighting()
+
+    if state.qualityLevel then
+        safe(function() settings().Rendering.QualityLevel = state.qualityLevel end)
+        state.qualityLevel = nil
+    end
+
+    state.busy = false
+    log("TẮT: đã khôi phục gốc")
+end
+
+-- ================= QUEUE PART MỚI (debounce + swap) =================
+local pendingQueue = {}
+local processing   = false
+local queued       = false
+
+local function processQueue()
+    if processing then return end
+    processing = true
+    queued     = false
+
+    while #pendingQueue > 0 do
+        local batch = pendingQueue
+        pendingQueue = {}   -- swap: phần tử mới thêm vẫn an toàn
+        for i = 1, #batch do
+            local obj = batch[i]
+            if obj and obj.Parent and state.enabled then
+                if obj:IsA("BasePart") then
+                    flattenPart(obj)
+                elseif obj:IsA("ParticleEmitter") then
+                    if state.particles[obj] == nil then
+                        state.particles[obj] = obj.Enabled
+                    end
+                    obj.Enabled = false
+                end
+            end
+            if i % 100 == 0 then
+                RunService.Heartbeat:Wait()
+            end
+        end
+    end
+
+    processing = false
+end
+
+Workspace.DescendantAdded:Connect(function(obj)
+    if not state.enabled then return end
+    if not (obj:IsA("BasePart") or obj:IsA("ParticleEmitter")) then return end
+    table.insert(pendingQueue, obj)
+    if not queued and not processing then
+        queued = true
+        task.defer(processQueue)
+    end
+end)
+
+-- ================= TOGGLE =================
+local function toggle()
+    if state.busy then return end
+    if state.enabled then restoreAll() else applyAll() end
+    if state.updateBtn then state.updateBtn() end
+end
+
+-- pcall vì một số executor iOS chặn InputBegan
+safe(function()
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == CONFIG.ToggleKey then toggle() end
+    end)
+end)
+
+-- ================= NÚT NỔI MOBILE =================
+local function createMobileButton()
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then
+        local ok, res = pcall(function()
+            return LocalPlayer:WaitForChild("PlayerGui", 5)
+        end)
+        if ok then playerGui = res end
+    end
+    if not playerGui then
+        warn("[minh fix lag] Không có PlayerGui — bỏ qua nút mobile.")
+        return
+    end
+
+    local old = playerGui:FindFirstChild(CONFIG.GuiName)
+    if old then old:Destroy() end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name           = CONFIG.GuiName
+    gui.ResetOnSpawn   = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder   = 999
+    gui.Parent         = playerGui
+
+    local btn = Instance.new("TextButton")
+    btn.Name                   = "ToggleBtn"
+    btn.Size                   = CONFIG.ButtonSize
+    btn.Position               = CONFIG.ButtonPos
+    btn.BackgroundColor3       = Color3.fromRGB(30, 160, 80)
+    btn.BackgroundTransparency = 0.15
+    btn.TextColor3             = Color3.fromRGB(255, 255, 255)
+    btn.TextScaled             = true
+    btn.Font                   = Enum.Font.GothamBold
+    btn.Text                   = "ON minh fix lag"
+    btn.BorderSizePixel        = 0
+    btn.AutoButtonColor        = true
+    btn.Parent                 = gui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent       = btn
+
+    local function updateBtn()
+        if state.enabled then
+            btn.Text             = "ON minh fix lag"
+            btn.BackgroundColor3 = Color3.fromRGB(30, 160, 80)
+        else
+            btn.Text             = "OFF minh fix lag"
+            btn.BackgroundColor3 = Color3.fromRGB(170, 50, 50)
+        end
+    end
+    updateBtn()
+    state.updateBtn = updateBtn
+
+    local dragging, dragStartPos, dragStartAbs, moved = false, nil, nil, false
+
+    local function clampToViewport()
+        local vp, sz, pos = gui.AbsoluteSize, btn.AbsoluteSize, btn.AbsolutePosition
+        local x = math.clamp(pos.X, 0, math.max(0, vp.X - sz.X))
+        local y = math.clamp(pos.Y, 0, math.max(0, vp.Y - sz.Y))
+        btn.Position = UDim2.fromOffset(x, y)
+    end
+
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging     = true
+            moved        = false
+            dragStartPos = Vector2.new(input.Position.X, input.Position.Y)
+            dragStartAbs = btn.AbsolutePosition
+        end
+    end)
+
+    btn.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local cur   = Vector2.new(input.Position.X, input.Position.Y)
+        local delta = cur - dragStartPos
+        if not moved and delta.Magnitude >= CONFIG.DragThreshold then moved = true end
+        if moved then
+            btn.Position = UDim2.fromOffset(dragStartAbs.X + delta.X, dragStartAbs.Y + delta.Y)
+            clampToViewport()
+        end
+    end)
+
+    btn.InputEnded:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local wasMoved = moved
+        dragging, moved = false, false
+        if not wasMoved then toggle() end
+    end)
+end
+
+task.spawn(createMobileButton)
+
+-- ================= HẠ CHẤT LƯỢNG ĐỒ HỌA =================
+safe(function()
+    local current = settings().Rendering.QualityLevel
+    if current and current ~= Enum.QualityLevel.Level01 then
+        state.qualityLevel = current
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    end
+end)
+
+-- ================= CHẠY LẦN ĐẦU =================
+applyAll()
+log("Sẵn sàng. PC: F | Mobile: nút nổi.")
+log("Không thấy log → Delta iOS chưa inject được.")
