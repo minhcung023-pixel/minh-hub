@@ -1,0 +1,498 @@
+-- ═══════════════════════════════════════════════
+-- MINH AIM V23 - CLEAN FINAL
+-- SWAP trên • AIM giữa • ESP dưới
+-- Box cố định • Xanh lá • Khoảng cách • Máu
+-- ═══════════════════════════════════════════════
+
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LP         = Players.LocalPlayer
+
+print("[V23] Đang khởi động...")
+
+local PG = LP:WaitForChild("PlayerGui", 10)
+if not PG then warn("[V23] Không có PlayerGui"); return end
+
+-- ═══════ GUI ═══════
+local gui = Instance.new("ScreenGui")
+gui.Name = "MinhV23"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = PG
+
+-- ═══════ CẤU HÌNH ═══════
+local CFG = {
+    -- ESP box
+    boxW = 45,
+    boxH = 85,
+    boxColor = Color3.fromRGB(80, 255, 80),
+    boxTransparency = 0.55,
+    fillTransparency = 0.85,
+    lockColor = Color3.fromRGB(255, 220, 80),
+
+    -- HP bar
+    hpW = 4,
+    hpGap = 6,
+
+    -- Limits
+    maxESP = 1000,
+
+    -- Aim
+    aimFOV = 250,
+    aimSmooth = 20,
+    aimPart = "Head",
+    lockMaxDist = 2000,
+    lockTimeout = 3,
+    searchDelay = 0.1,
+    hardLock = true,
+
+    -- Button
+    btnSize = 55,
+    btnGap = 8,
+    btnX = -70,
+}
+
+-- ═══════ TRẠNG THÁI ═══════
+local aimOn = false
+local espOn = false
+local ESPs = {}
+
+local lockPlayer = nil
+local lockPart = nil
+local lockLost = 0
+local lastSearch = 0
+local swapRequest = false
+local skipPlayer = nil
+
+-- ═══════════════════════════════════════════════
+-- ESP
+-- ═══════════════════════════════════════════════
+
+local function makeESP(plr)
+    if plr == LP then return end
+    if ESPs[plr] then
+        pcall(function() ESPs[plr].root:Destroy() end)
+        ESPs[plr] = nil
+    end
+
+    -- Root container (chứa tên trên + box + khoảng cách dưới)
+    local root = Instance.new("Frame")
+    root.Name = "ESP_" .. plr.Name
+    root.BackgroundTransparency = 1
+    root.BorderSizePixel = 0
+    root.ClipsDescendants = false
+    root.Size = UDim2.new(0, CFG.boxW, 0, CFG.boxH + 35)
+    root.Visible = false
+    root.Parent = gui
+
+    -- Box (cách top 18px cho tên)
+    local box = Instance.new("Frame")
+    box.Name = "Box"
+    box.BackgroundColor3 = CFG.boxColor
+    box.BackgroundTransparency = CFG.fillTransparency
+    box.BorderSizePixel = 0
+    box.Size = UDim2.new(1, 0, 0, CFG.boxH)
+    box.Position = UDim2.new(0, 0, 0, 18)
+    box.Parent = root
+
+    -- 4 cạnh viền
+    local function makeLine(name, size, pos)
+        local f = Instance.new("Frame")
+        f.Name = name
+        f.BackgroundColor3 = CFG.boxColor
+        f.BackgroundTransparency = CFG.boxTransparency
+        f.BorderSizePixel = 0
+        f.Size = size
+        f.Position = pos
+        f.Parent = box
+    end
+    makeLine("Top",    UDim2.new(1, 0, 0, 2), UDim2.new(0, 0, 0, 0))
+    makeLine("Bottom", UDim2.new(1, 0, 0, 2), UDim2.new(0, 0, 1, -2))
+    makeLine("Left",   UDim2.new(0, 2, 1, 0), UDim2.new(0, 0, 0, 0))
+    makeLine("Right",  UDim2.new(0, 2, 1, 0), UDim2.new(1, -2, 0, 0))
+
+    -- Thanh máu (bên trái box)
+    local hpBg = Instance.new("Frame")
+    hpBg.Name = "HPBg"
+    hpBg.BackgroundColor3 = Color3.new(0, 0, 0)
+    hpBg.BackgroundTransparency = 0.3
+    hpBg.BorderSizePixel = 0
+    hpBg.Size = UDim2.new(0, CFG.hpW, 1, 0)
+    hpBg.Position = UDim2.new(0, -CFG.hpGap - CFG.hpW, 0, 0)
+    hpBg.Parent = box
+
+    local hpFill = Instance.new("Frame")
+    hpFill.Name = "HPFill"
+    hpFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    hpFill.BackgroundTransparency = 0.2
+    hpFill.BorderSizePixel = 0
+    hpFill.Size = UDim2.new(1, 0, 1, 0)
+    hpFill.Parent = hpBg
+
+    -- Tên (trên cùng root)
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.Name = "Name"
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.TextColor3 = CFG.boxColor
+    nameLbl.TextStrokeTransparency = 0.4
+    nameLbl.TextSize = 13
+    nameLbl.Font = Enum.Font.GothamBold
+    nameLbl.Size = UDim2.new(1, 0, 0, 15)
+    nameLbl.Position = UDim2.new(0, 0, 0, 0)
+    nameLbl.Text = plr.Name
+    nameLbl.Parent = root
+
+    -- Khoảng cách (dưới cùng root)
+    local distLbl = Instance.new("TextLabel")
+    distLbl.Name = "Dist"
+    distLbl.BackgroundTransparency = 1
+    distLbl.TextColor3 = Color3.fromRGB(220, 255, 220)
+    distLbl.TextStrokeTransparency = 0.4
+    distLbl.TextSize = 12
+    distLbl.Font = Enum.Font.GothamBold
+    distLbl.Size = UDim2.new(1, 0, 0, 14)
+    distLbl.Position = UDim2.new(0, 0, 1, -14)
+    distLbl.Text = "0m"
+    distLbl.Parent = root
+
+    ESPs[plr] = {
+        root = root,
+        box = box,
+        hpBg = hpBg,
+        hpFill = hpFill,
+        nameLbl = nameLbl,
+        distLbl = distLbl,
+    }
+end
+
+local function removeESP(plr)
+    if ESPs[plr] then
+        pcall(function() ESPs[plr].root:Destroy() end)
+        ESPs[plr] = nil
+    end
+end
+
+-- ═══════════════════════════════════════════════
+-- NÚT (SWAP trên, AIM giữa, ESP dưới)
+-- ═══════════════════════════════════════════════
+
+-- SWAP — trên cùng
+local swapBtn = Instance.new("TextButton")
+swapBtn.Size = UDim2.new(0, CFG.btnSize, 0, CFG.btnSize)
+swapBtn.Position = UDim2.new(1, CFG.btnX, 0.5, -CFG.btnSize*1.5 - CFG.btnGap*1.5)
+swapBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 0)
+swapBtn.Text = "SWAP"
+swapBtn.TextColor3 = Color3.new(1, 1, 1)
+swapBtn.TextScaled = true
+swapBtn.Font = Enum.Font.GothamBold
+swapBtn.BorderSizePixel = 0
+swapBtn.ZIndex = 100
+swapBtn.Parent = gui
+Instance.new("UICorner", swapBtn).CornerRadius = UDim.new(1, 0)
+local s1 = Instance.new("UIStroke", swapBtn)
+s1.Color = Color3.new(1,1,1); s1.Thickness = 1.5; s1.Transparency = 0.5
+
+-- AIM — giữa
+local aimBtn = Instance.new("TextButton")
+aimBtn.Size = UDim2.new(0, CFG.btnSize, 0, CFG.btnSize)
+aimBtn.Position = UDim2.new(1, CFG.btnX, 0.5, -CFG.btnSize/2)
+aimBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+aimBtn.Text = "AIM"
+aimBtn.TextColor3 = Color3.new(1, 1, 1)
+aimBtn.TextScaled = true
+aimBtn.Font = Enum.Font.GothamBold
+aimBtn.BorderSizePixel = 0
+aimBtn.ZIndex = 100
+aimBtn.Parent = gui
+Instance.new("UICorner", aimBtn).CornerRadius = UDim.new(1, 0)
+local s2 = Instance.new("UIStroke", aimBtn)
+s2.Color = Color3.new(1,1,1); s2.Thickness = 1.5; s2.Transparency = 0.5
+
+-- ESP — dưới cùng
+local espBtn = Instance.new("TextButton")
+espBtn.Size = UDim2.new(0, CFG.btnSize, 0, CFG.btnSize)
+espBtn.Position = UDim2.new(1, CFG.btnX, 0.5, CFG.btnSize/2 + CFG.btnGap)
+espBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+espBtn.Text = "ESP"
+espBtn.TextColor3 = Color3.new(1, 1, 1)
+espBtn.TextScaled = true
+espBtn.Font = Enum.Font.GothamBold
+espBtn.BorderSizePixel = 0
+espBtn.ZIndex = 100
+espBtn.Parent = gui
+Instance.new("UICorner", espBtn).CornerRadius = UDim.new(1, 0)
+local s3 = Instance.new("UIStroke", espBtn)
+s3.Color = Color3.new(1,1,1); s3.Thickness = 1.5; s3.Transparency = 0.5
+
+-- ═══════ NHẢ LOCK ═══════
+local function releaseLock()
+    if lockPlayer then
+        print("[V23] 🔓 Nhả:", lockPlayer.Name)
+    end
+    lockPlayer = nil
+    lockPart = nil
+    lockLost = 0
+end
+
+-- ═══════ NHẤN NÚT ═══════
+aimBtn.Activated:Connect(function()
+    aimOn = not aimOn
+    aimBtn.BackgroundColor3 = aimOn
+        and Color3.fromRGB(0, 200, 80)
+        or  Color3.fromRGB(100, 100, 100)
+    if not aimOn then releaseLock() end
+    print("[V23] AIM:", aimOn and "ON" or "OFF")
+end)
+
+swapBtn.Activated:Connect(function()
+    if not aimOn then
+        print("[V23] ⚠️ Bật AIM trước")
+        return
+    end
+    skipPlayer = lockPlayer
+    swapRequest = true
+    print("[V23] 🔄 SWAP")
+end)
+
+espBtn.Activated:Connect(function()
+    espOn = not espOn
+    if espOn then
+        espBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+        for _, p in pairs(Players:GetPlayers()) do
+            makeESP(p)
+        end
+    else
+        espBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        for p in pairs(ESPs) do
+            removeESP(p)
+        end
+    end
+    print("[V23] ESP:", espOn and "ON" or "OFF")
+end)
+
+-- ═══════════════════════════════════════════════
+-- UPDATE ESP MỖI FRAME
+-- ═══════════════════════════════════════════════
+
+RunService.RenderStepped:Connect(function()
+    if not espOn then return end
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    local vp = cam.ViewportSize
+
+    for plr, obj in pairs(ESPs) do
+        local char = plr.Character
+        local head = char and char:FindFirstChild("Head")
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+
+        if not (char and head and hum and hrp) or hum.Health <= 0 then
+            obj.root.Visible = false
+            continue
+        end
+
+        local dist = (cam.CFrame.Position - hrp.Position).Magnitude
+        if dist > CFG.maxESP then
+            obj.root.Visible = false
+            continue
+        end
+
+        local headPos, onScreen = cam:WorldToViewportPoint(head.Position)
+        if not onScreen then
+            obj.root.Visible = false
+            continue
+        end
+
+        -- Vùng ẩn rìa màn hình (nới rộng tránh nhấp nháy)
+        if headPos.X < -CFG.boxW * 3 or headPos.X > vp.X + CFG.boxW * 3
+           or headPos.Y < -CFG.boxH * 3 or headPos.Y > vp.Y + CFG.boxH * 3 then
+            obj.root.Visible = false
+            continue
+        end
+
+        obj.root.Visible = true
+
+        -- Vị trí: đỉnh box = đỉnh đầu - 15px
+        -- Root có offset 18px trước box → rootY = boxTopY - 18
+        local boxTopY = headPos.Y - 15
+        local rootY = boxTopY - 18
+        local rootX = headPos.X - CFG.boxW / 2
+
+        obj.root.Position = UDim2.fromOffset(rootX, rootY)
+
+        -- Đổi màu theo trạng thái lock
+        local isLocked = (plr == lockPlayer)
+        local col = isLocked and CFG.lockColor or CFG.boxColor
+
+        obj.box.BackgroundColor3 = col
+        obj.box.BackgroundTransparency = CFG.fillTransparency
+        for _, side in pairs(obj.box:GetChildren()) do
+            if side:IsA("Frame") and side.Name ~= "HPBg" then
+                side.BackgroundColor3 = col
+                side.BackgroundTransparency = CFG.boxTransparency
+            end
+        end
+
+        obj.nameLbl.TextColor3 = col
+        obj.nameLbl.Text = isLocked and ("🔒 " .. plr.Name) or plr.Name
+
+        obj.distLbl.TextColor3 = col
+        obj.distLbl.Text = "[" .. math.floor(dist) .. "m]"
+
+        -- Máu
+        local pct = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
+        obj.hpFill.Size = UDim2.new(1, 0, pct, 0)
+        obj.hpFill.Position = UDim2.new(0, 0, 1 - pct, 0)
+        obj.hpFill.BackgroundColor3 = pct > 0.6 and Color3.fromRGB(0, 255, 0)
+            or pct > 0.3 and Color3.fromRGB(255, 255, 0)
+            or Color3.fromRGB(255, 0, 0)
+    end
+end)
+
+-- ═══════════════════════════════════════════════
+-- AIMBOT
+-- ═══════════════════════════════════════════════
+
+local function findTarget()
+    local cam = workspace.CurrentCamera
+    if not cam then return nil, nil end
+    local cx = cam.ViewportSize.X / 2
+    local cy = cam.ViewportSize.Y / 2
+    local bestPlr, bestPart, bestDist = nil, nil, CFG.aimFOV
+
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == LP then continue end
+        if plr == skipPlayer then continue end
+        local ch = plr.Character
+        if not ch then continue end
+        local part = ch:FindFirstChild(CFG.aimPart)
+            or ch:FindFirstChild("HumanoidRootPart")
+        local hum = ch:FindFirstChildOfClass("Humanoid")
+        if not part or not hum or hum.Health <= 0 then continue end
+        local sp, onScreen = cam:WorldToViewportPoint(part.Position)
+        if not onScreen then continue end
+        local d = math.sqrt((sp.X - cx)^2 + (sp.Y - cy)^2)
+        if d < bestDist then
+            bestDist = d
+            bestPlr = plr
+            bestPart = part
+        end
+    end
+    return bestPlr, bestPart
+end
+
+local function isTargetValid()
+    if not lockPart or not lockPart.Parent then return false end
+    if not lockPlayer or not lockPlayer.Parent then return false end
+    local ch = lockPlayer.Character
+    if not ch or not lockPart:IsDescendantOf(ch) then return false end
+    local hum = ch:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    local myChar = LP.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if myHRP then
+        if (myHRP.Position - lockPart.Position).Magnitude > CFG.lockMaxDist then
+            return false
+        end
+    end
+    return true
+end
+
+RunService.RenderStepped:Connect(function(dt)
+    if not aimOn then return end
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+
+    -- SWAP
+    if swapRequest then
+        swapRequest = false
+        releaseLock()
+        local plr, part = findTarget()
+        if plr and part then
+            lockPlayer = plr
+            lockPart = part
+            lockLost = 0
+            print("[V23] 🔄 → LOCK:", plr.Name)
+        else
+            print("[V23] ⚠️ Không còn target")
+        end
+        skipPlayer = nil
+        return
+    end
+
+    -- Chưa lock → tìm
+    if not lockPart then
+        if tick() - lastSearch > CFG.searchDelay then
+            lastSearch = tick()
+            local plr, part = findTarget()
+            if plr and part then
+                lockPlayer = plr
+                lockPart = part
+                lockLost = 0
+                print("[V23] 🔒 LOCK:", plr.Name)
+            end
+        end
+        return
+    end
+
+    -- Target không còn valid
+    if not isTargetValid() then
+        lockLost = lockLost + dt
+        if lockLost > CFG.lockTimeout then
+            releaseLock()
+        end
+        return
+    end
+
+    -- Aim
+    lockLost = 0
+    local ok = pcall(function()
+        if CFG.hardLock then
+            cam.CFrame = CFrame.lookAt(cam.CFrame.Position, lockPart.Position)
+        else
+            local targetCF = CFrame.new(cam.CFrame.Position, lockPart.Position)
+            local smooth = 1 - math.exp(-CFG.aimSmooth * dt)
+            smooth = math.clamp(smooth, 0.05, 0.95)
+            cam.CFrame = cam.CFrame:Lerp(targetCF, smooth)
+        end
+    end)
+    if not ok then releaseLock() end
+end)
+
+-- ═══════════════════════════════════════════════
+-- RESPAWN / PLAYER LEAVE
+-- ═══════════════════════════════════════════════
+
+local respawnConnected = {}
+
+local function connectRespawn(plr)
+    if plr == LP or respawnConnected[plr] then return end
+    respawnConnected[plr] = true
+    plr.CharacterAdded:Connect(function()
+        if plr == lockPlayer then releaseLock() end
+        if espOn then
+            task.wait(1)
+            makeESP(plr)
+        end
+    end)
+end
+
+Players.PlayerAdded:Connect(connectRespawn)
+Players.PlayerRemoving:Connect(function(plr)
+    if plr == lockPlayer then releaseLock() end
+    removeESP(plr)
+    respawnConnected[plr] = nil
+end)
+
+for _, p in pairs(Players:GetPlayers()) do
+    connectRespawn(p)
+end
+
+-- ═══════════════════════════════════════════════
+print("════════════════════════════════")
+print("[V23] ✅ SẴN SÀNG")
+print("[V23] 🔄 SWAP (trên) - AIM (giữa) - ESP (dưới)")
+print("[V23] 🟢 Box cố định 45×85")
+print("[V23] 📏 Hiện khoảng cách [Xm]")
+print("════════════════════════════════")
