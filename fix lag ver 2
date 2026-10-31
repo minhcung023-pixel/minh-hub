@@ -1,0 +1,516 @@
+--[[
+    ================================================================
+ =    Script : minh fix lag (v21 - bản đơn giản, ổn định)
+    Môi trường : Rob truelox / Delta Executor (PC + iOS + Android)
+
+    Cách dùng:
+        PC     : F = bật/tắt t
+ối ưu tổng | G = b   ật/tắt ẩn cỏ
+        Mobile : 2 nút nổi (kéo được)
+
+    Nguyên tắc: mỗi part chỉ lưu trạng thái gốc MỘT LẦN.
+    Không chuyển đổi giữa các bảng → không race condition.
+    ================================================================
+]]
+
+-- ================= KIỂM TRA =================
+if not game or not game.GetService then
+    warn("[minh fix lag] Không phải Roblox.")
+    return
+end
+
+local ok, Workspace = pcall(function() return game:GetService("Workspace") end)
+if not ok then
+    warn("[minh fix lag] Không truy cập Workspace.")
+    return
+end
+
+local Lighting         = game:GetService("Lighting")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    warn("[minh fix lag] Chưa có LocalPlayer. Vào game rồi chạy lại.")
+    return
+end
+
+-- ================= CẤU HÌNH =================
+local IS_MOBILE = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+local CONFIG = {
+    KeyFix     = Enum.KeyCode.F,
+    KeyGrass   = Enum.KeyCode.G,
+    Batch      = IS_MOBILE and 150 or 400,
+    DragLimit  = 8,
+    GuiName    = "MinhFixLagGui",
+    Debug      = true,
+    -- Từ khóa nhận diện cỏ
+    GrassNames = {
+        "grass", "bush", "leaf", "leaves", "foliage", "plant",
+        "shrub", "weed", "flower", "fern", "moss", "vine",
+        "cỏ", "lá", "bụi",
+    },
+    GrassTextures = {
+        "grass", "leaf", "leaves", "foliage", "plant", "bush",
+    },
+    GrassMaxSize = 12,   -- part nhỏ hơn 12 studs mới coi là cỏ
+}
+
+-- ================= TRẠNG THÁI =================
+-- saved[part] = { Transparency, CanCollide, Material, Reflectance, CastShadow, children }
+-- Mỗi part CHỈ lưu 1 lần duy nhất, dù bị ảnh hưởng bởi fix tổng hay ẩn cỏ.
+local saved = {}
+
+local flags = {
+    fixOn   = true,   -- tối ưu tổng đang bật
+    grassOn = true,   -- ẩn cỏ đang bật
+    busy    = false,  -- đang quét
+}
+
+local stats = { parts = 0, grass = 0, lights = 0, particles = 0 }
+
+-- ================= HELPERS =================
+local function log(msg)
+    if CONFIG.Debug then
+        print("[minh fix lag]", msg)
+    end
+end
+
+local function isPlayerChar(part)
+    local model = part:FindFirstAncestorOfClass("Model")
+    while model do
+        if Players:GetPlayerFromCharacter(model) then return true end
+        model = model:FindFirstAncestorOfClass("Model")
+    end
+    return false
+end
+
+local function nameIsGrass(name)
+    local lower = name:lower()
+    for _, p in ipairs(CONFIG.GrassNames) do
+        if lower:find(p, 1, true) then return true end
+    end
+    return false
+end
+
+local function hasGrassTexture(part)
+    for _, child in ipairs(part:GetChildren()) do
+        if child:IsA("Texture") or child:IsA("Decal") then
+            local tex = child.Texture
+            if tex and tex ~= "" then
+                local lower = tex:lower()
+                for _, p in ipairs(CONFIG.GrassTextures) do
+                    if lower:find(p, 1, true) then return true end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function isGrass(part)
+    if not part:IsA("BasePart") then return false end
+    local sz = part.Size
+    local maxDim = math.max(sz.X, sz.Y, sz.Z)
+    if nameIsGrass(part.Name) and maxDim <= 20 then return true end
+    if hasGrassTexture(part) and maxDim <= CONFIG.GrassMaxSize then return true end
+    return false
+end
+
+-- Lưu trạng thái gốc của part (chỉ 1 lần)
+local function savePart(part)
+    if saved[part] then return end
+    local children = {}
+    for _, child in ipairs(part:GetChildren()) do
+        if child:IsA("Texture") or child:IsA("Decal") then
+            children[child] = child.Transparency
+        end
+    end
+    saved[part] = {
+        Transparency = part.Transparency,
+        CanCollide   = part.CanCollide,
+        Material     = part.Material,
+        Reflectance  = part.Reflectance,
+        CastShadow   = part.CastShadow,
+        children     = children,
+    }
+end
+
+-- Khôi phục part về trạng thái gốc
+local function restorePart(part)
+    local data = saved[part]
+    if not data then return end
+    pcall(function()
+        part.Transparency = data.Transparency
+        part.CanCollide   = data.CanCollide
+        part.Material     = data.Material
+        part.Reflectance  = data.Reflectance
+        part.CastShadow   = data.CastShadow
+        for child, t in pairs(data.children) do
+            if child and child.Parent then
+                child.Transparency = t
+            end
+        end
+    end)
+    saved[part] = nil
+end
+
+-- Ẩn cỏ
+local function hideGrass(part)
+    if not isGrass(part) then return false end
+    savePart( flagspart)
+    pcall(function()
+        part.Transparency = 1
+        part.CanCollide   = false
+        part.CastShadow   = false
+        for _, child in ipairs(part:GetChildren()) do
+            if child:IsA("Texture") or child:IsA("Decal") then
+                child.Transparency = 1
+            end
+        end
+    end)
+    return true
+end
+
+-- Làm phẳng part (không phải cỏ)
+local function flattenPart(part)
+    if not part:IsA("BasePart") then return end
+    if isPlayerChar(part) then return end
+
+    -- Nếu là cỏ và đang bật ẩn cỏ → ẩn, không flatten
+    if flags.grassOn and isGrass(part) then
+        hideGrass(part)
+        return
+    end
+
+    savePart(part)
+    pcall(function()
+        part.Material    = Enum.Material.SmoothPlastic
+        part.Reflectance = 0
+        part.CastShadow  = false
+.g        for _, child in ipairs(part:GetChildren()) do
+            if child:IsrassA("Texture") or child:IsA("Decal") then
+               On child.Transparency = 1
+            end
+        end
+    end)
+end
+
+-- = Xử lý 1 object bất kỳ
+ truelocal function processObject(obj)
+    if obj:IsA("BasePart") then
+        flattenPart(obj)
+    elseif obj:IsA("ParticleEmitter") then
+        if not saved[obj] then
+            saved[obj] = { Enabled = obj.Enabled }
+        end
+        obj.Enabled = false
+        stats.particles += 1
+    elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+        if not saved[obj] then
+            saved[obj] = { Enabled = obj.Enabled }
+        end
+        obj.Enabled = false
+        stats.lights += 1
+    end
+end
+
+-- ================= BẬT TỐI ƯU TỔNG =================
+local function turnOnFix()
+    if flags.busy then return end
+    flags.busy = true
+    flags.fixOn = true
+    stats = { parts = 0, grass = 0, lights = 0, particles = 0 }
+
+    -- Lighting
+    if not saved[Lighting] then
+        saved[Lighting] = {
+            GlobalShadows = Lighting.GlobalShadows,
+            FogEnd        = Lighting.FogEnd,
+            Brightness    = Lighting.Brightness,
+        }
+    end
+    pcall(function()
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd        = 9e9
+        Lighting.Brightness    = 1
+    end)
+
+    -- Quét toàn bộ
+    local count = 0
+    local okScan = pcall(function()
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            processObject(obj)
+            count += 1
+            if count % CONFIG.Batch == 0 then
+                RunService.Heartbeat:Wait()
+            end
+        end
+    end)
+    if not okScan then
+        warn("[minh fix lag] Lỗi khi quét Workspace.")
+    end
+
+    -- Quét Lighting
+    pcall(function()
+        for _, obj in ipairs(Lighting:GetDescendants()) do
+            if obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+                if not saved[obj] then
+                    saved[obj] = { Enabled = obj.Enabled }
+                end
+                obj.Enabled = false
+                stats.lights += 1
+            end
+        end
+    end)
+
+    flags.busy = false
+    log("BẬT tối ưu tổng")
+end
+
+-- ================= TẮT TỐI ƯU TỔNG =================
+local function turnOffFix()
+    if flags.busy then return end
+    flags.busy = true
+    flags.fixOn = false
+
+    -- Khôi phục tất cả
+    local list = {}
+    for obj in pairs(saved) do
+        if obj ~= Lighting then
+            table.insert(list, obj)
+        end
+    end
+    for _, obj in ipairs(list) do
+        if obj:IsA("BasePart") then
+            restorePart(obj)
+        elseif obj:IsA("ParticleEmitter") then
+            pcall(function() obj.Enabled = saved[obj].Enabled end)
+            saved[obj] = nil
+        elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+            pcall(function() obj.Enabled = saved[obj].Enabled end)
+            saved[obj] = nil
+        end
+    end
+
+    -- Khôi phục Lighting
+    if saved[Lighting] then
+        pcall(function()
+            Lighting.GlobalShadows = saved[Lighting].GlobalShadows
+            Lighting.FogEnd        = saved[Lighting].FogEnd
+            Lighting.Brightness    = saved[Lighting].Brightness
+        end)
+        saved[Lighting] = nil
+    end
+
+    flags.busy = false
+    log("TẮT tối ưu tổng")
+end
+
+-- ================= BẬT ẨN CỎ =================
+local function turnOnGrass()
+    if flags.busy then return end
+    flags.b
+
+    local count = 0
+    pcall(function()
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and isGrass(obj) then
+                hideGrass(obj)
+            end
+            count += 1
+            if count % CONFIG.Batch == 0 then
+                RunService.Heartbeat:Wait()
+            end
+        end
+    end)
+
+    flags.busy = false
+    log("BẬT ẩn cỏ")
+end
+
+-- ================= TẮT ẨN CỎ =================
+local function turnOffGrass()
+    if flags.busy then return end
+    flags.busy = true
+    flags.grassOn = false
+
+    -- Chỉ khôi phục những part là cỏ (đã lưu)
+    -- Nhưng nếu fix tổng đang bật, cỏ vẫn cần bị flatten
+    local toRestore = {}
+    for obj in pairs(saved) do
+        if obj:IsA("BasePart") and isGrass(obj) then
+            table.insert(toRestore, obj)
+        end
+    end
+    for _, part in ipairs(toRestore) do
+        restorePart(part)
+        -- Nếu fix tổng đang bật, flatten lại (không ẩn)
+        if flags.fixOn then
+            flattenPart(part)
+        end
+    end
+
+    flags.busy = false
+    log("TẮT ẩn cỏ")
+end
+
+-- ================= THEO DÕI PART MỚI =================
+local processing = false
+
+Workspace.DescendantAdded:Connect(function(obj)
+    if not flags.fixOn and not flags.grassOn then return end
+    if obj:IsA("BasePart") and isPlayerChar(obj) then return end
+    if not (obj:IsA("BasePart") or obj:IsA("ParticleEmitter")
+        or obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight")) then
+        return
+    end
+    if processing then return end
+    processing = true
+    task.defer(function()
+        if obj.Parent then
+            if flags.fixOn then
+                processObject(obj)
+            elseif flags.grassOn and obj:IsA("BasePart") then
+                hideGrass(obj)
+            end
+        end
+        processing = false
+    end)
+end)
+
+-- ================= PHÍM TẮT =================
+pcall(function()
+    UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == CONFIG.KeyFix then
+            if flags.fixOn then turnOffFix() else turnOnFix() end
+            if updateBtn then updateBtn() end
+        elseif input.KeyCode == CONFIG.KeyGrass then
+            if flags.grassOn then turnOffGrass() else turnOnGrass() end
+            if updateBtn then updateBtn() end
+        end
+    end)
+end)
+
+-- ================= NÚT NỔI MOBILE =================
+local updateBtn = nil
+
+local function createGui()
+    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        or LocalPlayer:WaitForChild("PlayerGui", 10)
+    if not pg then return end
+
+    local old = pg:FindFirstChild(CONFIG.GuiName)
+    if old then old:Destroy() end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = CONFIG.GuiName
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 999
+    gui.Parent = pg
+
+    local box = Instance.new("Frame")
+    box.Size = UDim2.new(0, 130, 0, 96)
+    box.Position = UDim2.new(0, 20, 0.5, -48)
+    box.BackgroundTransparency = 1
+    box.Parent = gui
+
+    local b1 = Instance.new("TextButton")
+    b1.Size = UDim2.new(1, 0, 0, 44)
+    b1.Position = UDim2.new(0, 0, 0, 0)
+    b1.BackgroundColor3 = Color3.fromRGB(30, 160, 80)
+    b1.TextColor3 = Color3.new(1, 1, 1)
+    b1.TextScaled = true
+    b1.Font = Enum.Font.GothamBold
+    b1.Text = "Fix: ON"
+    b1.Parent = box
+    local c1 = Instance.new("UICorner")
+    c1.CornerRadius = UDim.new(0, 10)
+    c1.Parent = b1
+
+    local b2 = Instance.new("TextButton")
+    b2.Size = UDim2.new(1, 0, 0, 44)
+    b2.Position = UDim2.new(0, 0, 0, 52)
+    b2.BackgroundColor3 = Color3.fromRGB(30, 120, 200)
+    b2.TextColor3 = Color3.new(1, 1, 1)
+    b2.TextScaled = true
+    b2.Font = Enum.Font.GothamBold
+    b2.Text = "Cỏ: ON"
+    b2.Parent = box
+    local c2 = Instance.new("UICorner")
+    c2.CornerRadius = UDim.new(0, 10)
+    c2.Parent = b2
+
+    updateBtn = function()
+        b1.Text = flags.fixOn and "Fix: ON" or "Fix: OFF"
+        b1.BackgroundColor3 = flags.fixOn and Color3.fromRGB(30, 160, 80) or Color3.fromRGB(170, 50, 50)
+        b2.Text = flags.grassOn and "Cỏ: ON" or "Cỏ: OFF"
+        b2.BackgroundColor3 = flags.grassOn and Color3.fromRGB(30, 120, 200) or Color3.fromRGB(120, 120, 120)
+    end
+    updateBtn()
+
+    -- Kéo thả + click, gộp 1 handler mỗi nút
+    local function bind(button, onClick)
+        local dragging = false
+        local startPos = nil
+        local startAbs = nil
+        local moved = false
+
+        button.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                moved = false
+                startPos = Vector2.new(input.Position.X, input.Position.Y)
+                startAbs = box.AbsolutePosition
+            end
+        end)
+
+        button.InputChanged:Connect(function(input)
+            if not dragging then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            local cur = Vector2.new(input.Position.X, input.Position.Y)
+            local delta = cur - startPos
+            if not moved and delta.Magnitude >= CONFIG.DragLimit then moved = true end
+            if moved and box.Parent then
+                local vp = gui.AbsoluteSize
+                local sz = box.AbsoluteSize
+                local nx = math.clamp(startAbs.X + delta.X, 0, math.max(0, vp.X - sz.X))
+                local ny = math.clamp(startAbs.Y + delta.Y, 0, math.max(0, vp.Y - sz.Y))
+                box.Position = UDim2.fromOffset(nx, ny)
+            end
+        end)
+
+        button.InputEnded:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            local wasMoved = moved
+            dragging = false
+            moved = false
+            if not wasMoved then onClick() end
+        end)
+    end
+
+    bind(b1, function()
+        if flags.fixOn then turnOffFix() else turnOnFix() end
+        updateBtn()
+    end)
+
+    bind(b2, function()
+        if flags.grassOn then turnOffGrass() else turnOnGrass() end
+        updateBtn()
+    end)
+end
+
+task.spawn(function()
+    pcall(createGui)
+end)
+
+-- ================= CHẠY LẦN ĐẦU =================
+turnOnFix()
+log("Sẵn sàng. PC: F | G. Mobile: 2 nút.")
