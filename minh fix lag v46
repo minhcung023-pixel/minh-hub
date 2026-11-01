@@ -1,0 +1,345 @@
+--[[
+    ================================================================
+    Script : minh fix lag
+    Phiên bản : v46 (tối giản cho Delta iOS)
+    Môi trường : Roblox / Delta Executor (iOS + Android + PC)
+
+    Cách dùng:
+        - Đợi vào game hoàn toàn (nhân vật di chuyển được)
+        - Dán script vào Delta, nhấn Execute
+        - Nếu thấy log "[minh fix lag] Sẵn sàng" → chạy thành công
+        - PC: F | Mobile: 1 nút nổi
+
+    Đã bỏ: FPS auto, chế độ nhẹ, tắt âm thanh, phức tạp
+    Chỉ giữ: làm phẳng texture, tắt đèn/particle/hiệu ứng
+    ================================================================
+]]
+
+-- ================= KIỂM TRA =================
+if not game or not game.GetService then
+    warn("[minh fix lag] Không phải Roblox.")
+    return
+end
+
+local ok, Workspace = pcall(function() return game:GetService("Workspace") end)
+if not ok then
+    warn("[minh fix lag] Không truy cập Workspace.")
+    return
+end
+
+local Lighting         = game:GetService("Lighting")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    warn("[minh fix lag] Chưa có LocalPlayer. Vào game rồi chạy lại.")
+    return
+end
+
+-- ================= CẤU HÌNH =================
+local CONFIG = {
+    KeyFix    = Enum.KeyCode.F,
+    Batch     = 100,
+    DragLimit = 8,
+    GuiName   = "MinhFixLagGui",
+    Debug     = true,
+}
+
+-- ================= TRẠNG THÁI =================
+local saved = {}
+local on    = true
+local busy  = false
+
+-- ================= HELPERS =================
+local function log(msg)
+    if CONFIG.Debug then
+        print("[minh fix lag]", msg)
+    end
+end
+
+local function isPlayerChar(part)
+    local model = part:FindFirstAncestorOfClass("Model")
+    while model do
+        if Players:GetPlayerFromCharacter(model) then return true end
+        model = model:FindFirstAncestorOfClass("Model")
+    end
+    return false
+end
+
+local function saveObj(obj)
+    if saved[obj] then return end
+    if obj:IsA("BasePart") then
+        local children = {}
+        for _, child in ipairs(obj:GetChildren()) do
+            if child:IsA("Texture") or child:IsA("Decal") then
+                children[child] = child.Transparency
+            end
+        end
+        saved[obj] = {
+            Transparency = obj.Transparency,
+            CanCollide   = obj.CanCollide,
+            Material     = obj.Material,
+            Reflectance  = obj.Reflectance,
+            CastShadow   = obj.CastShadow,
+            children     = children,
+        }
+    elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke")
+        or obj:IsA("Sparkles") or obj:IsA("Beam") or obj:IsA("Trail")
+        or obj:IsA("Highlight") then
+        saved[obj] = { Enabled = obj.Enabled }
+    elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+        saved[obj] = { Enabled = obj.Enabled }
+    end
+end
+
+local function restoreObj(obj)
+    local data = saved[obj]
+    if not data then return end
+    if not obj or not obj.Parent then
+        saved[obj] = nil
+        return
+    end
+    pcall(function()
+        if obj:IsA("BasePart") then
+            obj.Transparency = data.Transparency
+            obj.CanCollide   = data.CanCollide
+            obj.Material     = data.Material
+            obj.Reflectance  = data.Reflectance
+            obj.CastShadow   = data.CastShadow
+            for child, t in pairs(data.children) do
+                if child and child.Parent then
+                    child.Transparency = t
+                end
+            end
+        else
+            obj.Enabled = data.Enabled
+        end
+    end)
+    saved[obj] = nil
+end
+
+local function applyObj(obj)
+    if obj:IsA("BasePart") then
+        if isPlayerChar(obj) then return end
+        saveObj(obj)
+        pcall(function()
+            obj.Material    = Enum.Material.SmoothPlastic
+            obj.Reflectance = 0
+            obj.CastShadow  = false
+            for _, child in ipairs(obj:GetChildren()) do
+                if child:IsA("Texture") or child:IsA("Decal") then
+                    child.Transparency = 1
+                end
+            end
+        end)
+    elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke")
+        or obj:IsA("Sparkles") or obj:IsA("Beam") or obj:IsA("Trail")
+        or obj:IsA("Highlight") then
+        saveObj(obj)
+        pcall(function() obj.Enabled = false end)
+    elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+        saveObj(obj)
+        pcall(function() obj.Enabled = false end)
+    end
+end
+
+-- ================= QUÉT =================
+local function scanAll()
+    local count = 0
+    pcall(function()
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            applyObj(obj)
+            count += 1
+            if count % CONFIG.Batch == 0 then
+                RunService.Heartbeat:Wait()
+            end
+        end
+    end)
+    pcall(function()
+        for _, obj in ipairs(Lighting:GetDescendants()) do
+            if obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+                saveObj(obj)
+                obj.Enabled = false
+            end
+        end
+    end)
+    if not saved[Lighting] then
+        saved[Lighting] = {
+            GlobalShadows = Lighting.GlobalShadows,
+            FogEnd        = Lighting.FogEnd,
+            Brightness    = Lighting.Brightness,
+        }
+    end
+    pcall(function()
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd        = 9e9
+        Lighting.Brightness    = 1
+    end)
+end
+
+-- ================= KHÔI PHỤC =================
+local function restoreAll()
+    local list = {}
+    for obj in pairs(saved) do table.insert(list, obj) end
+    for _, obj in ipairs(list) do
+        if obj == Lighting then
+            pcall(function()
+                Lighting.GlobalShadows = saved[Lighting].GlobalShadows
+                Lighting.FogEnd        = saved[Lighting].FogEnd
+                Lighting.Brightness    = saved[Lighting].Brightness
+            end)
+            saved[Lighting] = nil
+        else
+            restoreObj(obj)
+        end
+    end
+end
+
+-- ================= TOGGLE =================
+local function setFix(value)
+    if busy then
+        log("Đang bận, bỏ qua")
+        return
+    end
+    busy = true
+    on   = value
+
+    if on then
+        scanAll()
+    else
+        restoreAll()
+    end
+
+    busy = false
+    log(on and "BẬT tối ưu" or "TẮT — đã khôi phục gốc")
+end
+
+-- ================= THEO DÕI OBJ MỚI =================
+Workspace.DescendantAdded:Connect(function(obj)
+    if not on then return end
+    if not (obj:IsA("BasePart") or obj:IsA("ParticleEmitter")
+        or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles")
+        or obj:IsA("Beam") or obj:IsA("Trail") or obj:IsA("Highlight")
+        or obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight")) then
+        return
+    end
+    if obj:IsA("BasePart") and isPlayerChar(obj) then return end
+
+    task.defer(function()
+        if obj.Parent and on and not busy then
+            applyObj(obj)
+        end
+    end)
+end)
+
+-- ================= UI =================
+local updateBtn = nil
+
+local function createGui()
+    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        or LocalPlayer:WaitForChild("PlayerGui", 10)
+    if not pg then
+        warn("[minh fix lag] Không có PlayerGui — bỏ qua nút mobile.")
+        return
+    end
+
+    local old = pg:FindFirstChild(CONFIG.GuiName)
+    if old then old:Destroy() end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name           = CONFIG.GuiName
+    gui.ResetOnSpawn   = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder   = 999
+    gui.Parent         = pg
+
+    local btn = Instance.new("TextButton")
+    btn.Size                   = UDim2.new(0, 120, 0, 44)
+    btn.Position               = UDim2.new(0, 20, 0.5, -22)
+    btn.BackgroundColor3       = Color3.fromRGB(30, 160, 80)
+    btn.BackgroundTransparency = 0.15
+    btn.TextColor3             = Color3.fromRGB(255, 255, 255)
+    btn.TextScaled             = true
+    btn.Font                   = Enum.Font.GothamBold
+    btn.Text                   = "ON minh fix lag"
+    btn.BorderSizePixel        = 0
+    btn.Parent                 = gui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent       = btn
+
+    updateBtn = function()
+        if on then
+            btn.Text             = "ON minh fix lag"
+            btn.BackgroundColor3 = Color3.fromRGB(30, 160, 80)
+        else
+            btn.Text             = "OFF minh fix lag"
+            btn.BackgroundColor3 = Color3.fromRGB(170, 50, 50)
+        end
+    end
+    updateBtn()
+
+    local dragging, startPos, startAbs, moved = false, nil, nil, false
+
+    local function clamp()
+        if not btn.Parent then return end
+        local vp = gui.AbsoluteSize
+        local sz = btn.AbsoluteSize
+        local x  = math.clamp(btn.AbsolutePosition.X, 0, math.max(0, vp.X - sz.X))
+        local y  = math.clamp(btn.AbsolutePosition.Y, 0, math.max(0, vp.Y - sz.Y))
+        btn.Position = UDim2.fromOffset(x, y)
+    end
+
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            moved    = false
+            startPos = Vector2.new(input.Position.X, input.Position.Y)
+            startAbs = btn.AbsolutePosition
+        end
+    end)
+
+    btn.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local cur   = Vector2.new(input.Position.X, input.Position.Y)
+        local delta = cur - startPos
+        if not moved and delta.Magnitude >= CONFIG.DragLimit then moved = true end
+        if moved then
+            btn.Position = UDim2.fromOffset(startAbs.X + delta.X, startAbs.Y + delta.Y)
+            clamp()
+        end
+    end)
+
+    btn.InputEnded:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local wasMoved = moved
+        dragging, moved = false, false
+        if not wasMoved then
+            setFix(not on)
+            updateBtn()
+        end
+    end)
+end
+
+pcall(function()
+    UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == CONFIG.KeyFix then
+            setFix(not on)
+            if updateBtn then updateBtn() end
+        end
+    end)
+end)
+
+-- ================= KHỞI TẠO =================
+task.spawn(function() pcall(createGui) end)
+setFix(true)
+log("Sẵn sàng. PC: F | Mobile: nút nổi.")
+log("Nếu không thấy dòng này → Delta chưa inject được.")
