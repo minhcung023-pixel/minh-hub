@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Thiện Minh">
+<meta name="theme-color" content="#1e3c72">
+<title>Thiện Minh — Tìm File</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='40' fill='%231e3c72'/><text x='90' y='125' font-size='100' text-anchor='middle' fill='white'>🔍</text></svg>">
+<style>
+:root {
+  --bg: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+  --card: #ffffff; --text: #333333; --text-sub: #666666; --text-muted: #999999;
+  --border: #e0e0e0; --hover: #f5f8ff; --primary: #2a5298; --primary-dark: #1e3c72;
+  --primary-light: #e6efff; --badge-bg: #e6efff; --badge-text: #2a5298;
+  --stat-bg: #f0f4ff; --danger: #e74c3c; --success: #27ae60; --warning: #f39c12;
+  --gradient-brand: linear-gradient(135deg, #1e3c72, #2a5298, #4a7bc8);
+}
+[data-theme="dark"] {
+  --bg: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  --card: #1e293b; --text: #e2e8f0; --text-sub: #94a3b8; --text-muted: #64748b;
+  --border: #334155; --hover: #334155; --primary: #60a5fa; --primary-dark: #93c5fd;
+  --primary-light: #1e3a5f; --badge-bg: #1e3a5f; --badge-text: #93c5fd;
+  --stat-bg: #0f172a;
+  --gradient-brand: linear-gradient(135deg, #3b82f6, #60a5fa, #93c5fd);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg); min-height: 100vh; min-height: 100dvh;
+  padding: calc(16px + env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom));
+  color: var(--text); transition: background 0.3s; overscroll-behavior-y: contain;
+}
+.container {
+  max-width: 950px; margin: 0 auto; background: var(--card);
+  border-radius: 20px; padding: 22px 18px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3); transition: background 0.3s;
+}
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-logo {
+  width: 42px; height: 42px; border-radius: 12px; background: var(--gradient-brand);
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  box-shadow: 0 4px 12px rgba(30,60,114,0.3); flex-shrink: 0;
+}
+.brand-text h1 {
+  font-size: 20px; background: var(--gradient-brand);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; font-weight: 800; letter-spacing: -0.3px;
+}
+.brand-text .tagline { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.theme-toggle {
+  background: var(--stat-bg); border: none; border-radius: 50%;
+  width: 40px; height: 40px; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.theme-toggle:active { transform: scale(0.9); }
+.hero-subtitle {
+  text-align: center; color: var(--text-muted); font-size: 12px;
+  margin: 14px 0 16px; padding-bottom: 16px; border-bottom: 1px dashed var(--border);
+}
+.pick-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+.pick-btn {
+  flex: 1; min-width: 130px; padding: 16px 12px;
+  border: 2px dashed var(--primary); border-radius: 14px;
+  background: var(--primary-light); text-align: center; cursor: pointer;
+  transition: all 0.2s; font-size: 14px; color: var(--primary-dark);
+  font-weight: 600; min-height: 90px;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+}
+.pick-btn:active { transform: scale(0.97); opacity: 0.85; }
+.pick-btn .icon { font-size: 28px; margin-bottom: 4px; }
+.pick-btn small { display: block; color: var(--text-muted); font-weight: normal; font-size: 10px; margin-top: 2px; }
+.drop-zone {
+  border: 2px dashed var(--primary); border-radius: 14px; padding: 20px;
+  text-align: center; background: var(--primary-light); margin-top: 10px;
+}
+.drop-zone.dragover { opacity: 0.9; }
+.search-panel { margin-top: 18px; display: none; gap: 8px; flex-wrap: wrap; }
+.search-panel.active { display: flex; }
+.search-panel input, .search-panel select {
+  padding: 12px; border: 2px solid var(--border); border-radius: 10px;
+  font-size: 16px; font-family: inherit; background: var(--card); color: var(--text);
+  width: 100%; -webkit-appearance: none; appearance: none;
+}
+.search-panel input:focus, .search-panel select:focus { outline: none; border-color: var(--primary); }
+#searchInput { flex: 1; min-width: 200px; }
+.filter-row { display: flex; gap: 6px; width: 100%; flex-wrap: wrap; }
+.filter-row select { flex: 1; min-width: 110px; font-size: 13px; padding: 10px; }
+.history { margin-top: 10px; display: none; flex-wrap: wrap; gap: 6px; align-items: center; }
+.history.active { display: flex; }
+.history-label { font-size: 11px; color: var(--text-muted); margin-right: 4px; }
+.history-chip {
+  background: var(--stat-bg); color: var(--text-sub); padding: 5px 11px;
+  border-radius: 20px; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--border); max-width: 160px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.history-clear {
+  background: transparent; color: var(--danger); border: none;
+  font-size: 11px; cursor: pointer; padding: 5px 8px;
+}
+.stats { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-sub); }
+.stat-box { background: var(--stat-bg); padding: 10px; border-radius: 10px; flex: 1; min-width: 80px; text-align: center; }
+.stat-box strong { color: var(--primary); font-size: 16px; display: block; }
+.stat-box span { font-size: 10px; color: var(--text-muted); }
+.toolbar { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+.tool-btn {
+  padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text-sub); cursor: pointer;
+  font-size: 12px; font-weight: 600; flex: 1; min-width: 100px;
+}
+.tool-btn:active { background: var(--primary-light); transform: scale(0.97); }
+.tool-btn.warning { color: var(--warning); border-color: var(--warning); }
+.tool-btn.danger { color: var(--danger); border-color: var(--danger); }
+.chart-container { margin-top: 14px; background: var(--stat-bg); padding: 14px; border-radius: 12px; display: none; }
+.chart-container.active { display: block; }
+.chart-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.chart-bar { display: flex; height: 26px; border-radius: 8px; overflow: hidden; margin-bottom: 10px; background: var(--border); }
+.chart-segment { height: 100%; transition: width 0.5s; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; }
+.legend-item { display: flex; align-items: center; gap: 5px; color: var(--text-sub); }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.results { margin-top: 14px; max-height: 60vh; overflow-y: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
+.file-item {
+  display: flex; align-items: center; padding: 11px 8px;
+  border-bottom: 1px solid var(--border); cursor: pointer; gap: 8px;
+}
+.file-item:active { background: var(--hover); }
+.file-item.duplicate { background: rgba(231, 76, 60, 0.08); border-left: 3px solid var(--danger); padding-left: 5px; }
+.file-item .icon { font-size: 20px; width: 28px; text-align: center; flex-shrink: 0; }
+.file-item .info { flex: 1; min-width: 0; }
+.file-item .name {
+  color: var(--text); font-weight: 600; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.file-item .path {
+  color: var(--text-muted); font-size: 10px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
+}
+.file-item .size { color: var(--text-sub); font-size: 10px; white-space: nowrap; flex-shrink: 0; }
+.file-item .ext-badge {
+  background: var(--badge-bg); color: var(--badge-text); padding: 2px 5px;
+  border-radius: 5px; font-size: 9px; font-weight: bold;
+  text-transform: uppercase; flex-shrink: 0;
+}
+.no-result { text-align: center; padding: 36px 16px; color: var(--text-muted); font-size: 14px; }
+.loading { text-align: center; padding: 20px; color: var(--primary); font-weight: 600; font-size: 14px; }
+.spinner {
+  border: 4px solid var(--border); border-top: 4px solid var(--primary);
+  border-radius: 50%; width: 30px; height: 30px;
+  animation: spin 1s linear infinite; margin: 0 auto 10px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.reset-btn {
+  margin-top: 12px; padding: 10px 16px; background: var(--stat-bg);
+  color: var(--primary); border: none; border-radius: 10px;
+  font-weight: 600; cursor: pointer; font-size: 13px;
+}
+.hidden-input { display: none; }
+.ios-notice {
+  background: rgba(255, 193, 7, 0.12); border-left: 4px solid var(--warning);
+  padding: 11px 13px; border-radius: 8px; margin-top: 12px;
+  font-size: 12px; color: var(--text-sub); line-height: 1.5;
+}
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+  z-index: 1000; justify-content: center; align-items: center;
+  padding: calc(16px + env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom));
+}
+.modal-overlay.active { display: flex; }
+.modal-content {
+  background: var(--card); border-radius: 16px; width: 100%; max-width: 600px;
+  max-height: 90vh; overflow: auto; padding: 18px; position: relative;
+}
+.modal-close {
+  position: sticky; top: 0; float: right; background: var(--danger);
+  color: white; border: none; width: 34px; height: 34px; border-radius: 50%;
+  cursor: pointer; font-size: 20px; font-weight: bold; z-index: 10;
+}
+.modal-title {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  margin-bottom: 12px; padding-right: 44px; word-break: break-all; line-height: 1.4;
+}
+.modal-preview img { max-width: 100%; max-height: 60vh; border-radius: 8px; display: block; margin: 0 auto; }
+.modal-preview iframe { width: 100%; height: 60vh; border: none; border-radius: 8px; background: white; }
+.modal-preview video { max-width: 100%; max-height: 60vh; border-radius: 8px; display: block; margin: 0 auto; }
+.modal-preview audio { width: 100%; }
+.modal-preview pre {
+  background: var(--stat-bg); padding: 12px; border-radius: 8px;
+  max-height: 55vh; overflow: auto; font-size: 11px;
+  white-space: pre-wrap; word-break: break-word; color: var(--text);
+  font-family: 'SF Mono', Menlo, monospace; line-height: 1.5;
+}
+.modal-info {
+  margin-top: 12px; font-size: 11px; color: var(--text-sub);
+  line-height: 1.7; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.modal-info b { color: var(--text); }
+.footer-brand {
+  text-align: center; margin-top: 20px; padding-top: 16px;
+  border-top: 1px dashed var(--border); font-size: 11px; color: var(--text-muted);
+}
+.footer-brand strong {
+  background: var(--gradient-brand); -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent; background-clip: text; font-weight: 800;
+}
+@media (max-width: 480px) {
+  body { padding-left: 8px; padding-right: 8px; }
+  .container { padding: 16px 12px; border-radius: 16px; }
+  .brand-text h1 { font-size: 17px; }
+  .brand-logo { width: 36px; height: 36px; font-size: 18px; }
+  .pick-btn { padding: 12px 8px; font-size: 12px; min-height: 80px; }
+  .pick-btn .icon { font-size: 24px; }
+  .tool-btn { font-size: 11px; padding: 7px 8px; min-width: 80px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="brand">
+      <div class="brand-logo">🔍</div>
+      <div class="brand-text">
+        <h1>Thiện Minh</h1>
+        <div class="tagline">Công cụ tìm file thông minh</div>
+      </div>
+    </div>
+    <button class="theme-toggle" id="themeToggle">🌙</button>
+  </div>
+  <p class="hero-subtitle">✨ 8 tính năng · An toàn 100% · Hỗ trợ iOS, Android, máy tính</p>
+
+  <div id="iosNotice" class="ios-notice" style="display:none;">
+    📱 <strong>Trên iPhone/iPad:</strong> Nhấn <b>"Chọn file"</b> → trong app Files, nhấn giữ để chọn nhiều file.
+  </div>
+
+  <div class="pick-buttons" id="pickButtons">
+    <label class="pick-btn" for="folderInput" id="folderBtn">
+      <span class="icon">📁</span>Chọn thư mục<small>Máy tính</small>
+    </label>
+    <label class="pick-btn" for="fileInput">
+      <span class="icon">📄</span>Chọn file<small>Mọi thiết bị</small>
+    </label>
+  </div>
+
+  <div class="drop-zone" id="dropZone">
+    <div style="font-size:28px;">⬇️</div>
+    <div style="color:var(--text-sub); font-size:12px; margin-top:4px;">Hoặc kéo thả file / thư mục (máy tính)</div>
+  </div>
+
+  <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden-input">
+  <input type="file" id="fileInput" multiple class="hidden-input">
+
+  <div class="search-panel" id="searchPanel">
+    <input type="text" id="searchInput" placeholder="🔎 Tìm theo tên file..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <div class="filter-row">
+      <select id="extFilter"><option value="">Mọi loại</option></select>
+      <select id="sizeFilter">
+        <option value="">Mọi kích thước</option>
+        <option value="0-102400">&lt; 100KB</option>
+        <option value="102400-1048576">100KB – 1MB</option>
+        <option value="1048576-10485760">1MB – 10MB</option>
+        <option value="10485760-104857600">10MB – 100MB</option>
+        <option value="104857600-999999999999">&gt; 100MB</option>
+      </select>
+      <select id="dateFilter">
+        <option value="">Mọi thời gian</option>
+        <option value="1">Hôm nay</option>
+        <option value="7">7 ngày qua</option>
+        <option value="30">30 ngày qua</option>
+        <option value="365">1 năm qua</option>
+      </select>
+      <select id="sortFilter">
+        <option value="name-asc">Tên A→Z</option>
+        <option value="name-desc">Tên Z→A</option>
+        <option value="size-desc">Size lớn→nhỏ</option>
+        <option value="size-asc">Size nhỏ→lớn</option>
+        <option value="date-desc">Mới nhất</option>
+        <option value="date-asc">Cũ nhất</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="history" id="history"></div>
+
+  <div class="stats" id="stats" style="display:none;">
+    <div class="stat-box"><strong id="totalCount">0</strong><span>Tổng file</span></div>
+    <div class="stat-box"><strong id="resultCount">0</strong><span>Kết quả</span></div>
+    <div class="stat-box"><strong id="totalSize">0 B</strong><span>Dung lượng</span></div>
+  </div>
+
+  <div class="toolbar" id="toolbar" style="display:none;">
+    <button class="tool-btn" id="exportBtn">💾 Xuất CSV</button>
+    <button class="tool-btn warning" id="dupBtn">🗑️ Trùng lặp</button>
+    <button class="tool-btn" id="chartBtn">📊 Biểu đồ</button>
+  </div>
+
+  <div class="chart-container" id="chartContainer">
+    <div class="chart-title">📈 Thống kê theo loại file</div>
+    <div class="chart-bar" id="chartBar"></div>
+    <div class="chart-legend" id="chartLegend"></div>
+  </div>
+
+  <div class="results" id="results"></div>
+  <button class="reset-btn" id="resetBtn" style="display:none;">🔄 Chọn lại</button>
+
+  <div class="footer-brand">
+    Được tạo bởi <strong>Thiện Minh</strong> · Chạy 100% trên thiết bị của bạn
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal-content">
+    <button class="modal-close" id="modalClose">×</button>
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-preview" id="modalPreview"></div>
+    <div class="modal-info" id="modalInfo"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const folderInput = $('folderInput'), fileInput = $('fileInput');
+  const dropZone = $('dropZone'), pickButtons = $('pickButtons');
+  const searchPanel = $('searchPanel'), searchInput = $('searchInput');
+  const extFilter = $('extFilter'), sizeFilter = $('sizeFilter');
+  const dateFilter = $('dateFilter'), sortFilter = $('sortFilter');
+  const results = $('results'), stats = $('stats');
+  const resetBtn = $('resetBtn'), toolbar = $('toolbar');
+  const historyEl = $('history'), chartContainer = $('chartContainer');
+
+  let allFiles = [], currentFiles = [], rawFiles = {}, currentView = 'all';
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+  if (isIOS) {
+    $('iosNotice').style.display = 'block';
+    $('folderBtn').style.display = 'none';
+    dropZone.style.display = 'none';
+    document.querySelectorAll('input, select').forEach(el => el.style.fontSize = '16px');
+  }
+  if (isMobile) dropZone.style.display = 'none';
+
+  // ===== DARK MODE =====
+  const themeToggle = $('themeToggle');
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    themeToggle.textContent = t === 'dark' ? '☀️' : '🌙';
+    try { localStorage.setItem('tm_theme', t); } catch(e) {}
+  }
+  let savedTheme = 'light';
+  try { savedTheme = localStorage.getItem('tm_theme') || 
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch(e) {}
+  applyTheme(savedTheme);
+  themeToggle.addEventListener('click', () => {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+
+  // ===== LỊCH SỬ =====
+  let searchHistory = [];
+  try { searchHistory = JSON.parse(localStorage.getItem('tm_history') || '[]'); } catch(e) {}
+  function renderHistory() {
+    if (!searchHistory.length) { historyEl.classList.remove('active'); return; }
+    historyEl.classList.add('active');
+    historyEl.innerHTML = '<span class="history-label">Gần đây:</span>' + 
+      searchHistory.map(h => '<span class="history-chip" data-q="' + escapeHtml(h) + '">' + escapeHtml(h) + '</span>').join('') +
+      '<button class="history-clear" id="clearHistory">Xóa</button>';
+    historyEl.querySelectorAll('.history-chip').forEach(c => {
+      c.addEventListener('click', () => { searchInput.value = c.dataset.q; filterFiles(); });
+    });
+    $('clearHistory').addEventListener('click', () => {
+      searchHistory = [];
+      try { localStorage.setItem('tm_history', '[]'); } catch(e) {}
+      renderHistory();
+    });
+  }
+  renderHistory();
+
+  function addHistory(q) {
+    q = q.trim();
+    if (!q || q.length < 2) return;
+    searchHistory = [q, ...searchHistory.filter(h => h !== q)].slice(0, 8);
+    try { localStorage.setItem('tm_history', JSON.stringify(searchHistory)); } catch(e) {}
+    renderHistory();
+  }
+
+  // ===== NHẬN FILE =====
+  function makeInfo(f, customPath) {
+    const info = {
+      name: f.name, path: customPath || f.webkitRelativePath || f.name,
+      size: f.size, ext: getExt(f.name), lastModified: f.lastModified,
+      type: f.type || '', key: 'f_' + Math.random().toString(36).slice(2) + Date.now()
+    };
+    rawFiles[info.key] = f;
+    return info;
+  }
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) processFiles(Array.from(fileInput.files).map(f => makeInfo(f)));
+  });
+  folderInput.addEventListener('change', () => {
+    if (folderInput.files.length) processFiles(Array.from(folderInput.files).map(f => makeInfo(f)));
+  });
+
+  ['dragenter','dragover'].forEach(evt => {
+    dropZone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.add('dragover'); });
+  });
+  ['dragleave','drop'].forEach(evt => {
+    dropZone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('dragover'); });
+  });
+  dropZone.addEventListener('drop', async e => {
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    if (dt.items && dt.items.length && dt.items[0].webkitGetAsEntry) {
+      showLoading();
+      const files = [], entries = [];
+      for (const item of dt.items) {
+        const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+        if (entry) entries.push(entry);
+      }
+      if (entries.length) {
+        for (const entry of entries) await traverseEntry(entry, files);
+        processFiles(files);
+        return;
+      }
+    }
+    if (dt.files && dt.files.length) {
+      processFiles(Array.from(dt.files).map(f => makeInfo(f)));
+    }
+  });
+
+  function traverseEntry(entry, files) {
+    return new Promise(resolve => {
+      if (entry.isFile) {
+        entry.file(f => { files.push(makeInfo(f, entry.fullPath)); resolve(); }, () => resolve());
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const readAll = () => {
+          reader.readEntries(async entries => {
+            if (entries.length === 0) return resolve();
+            for (const e of entries) await traverseEntry(e, files);
+            readAll();
+          }, () => resolve());
+        };
+        readAll();
+      } else resolve();
+    });
+  }
+
+  // ===== XỬ LÝ =====
+  function showLoading() {
+    results.innerHTML = '<div class="loading"><div class="spinner"></div>Đang quét file...</div>';
+    stats.style.display = 'none';
+    searchPanel.classList.remove('active');
+    toolbar.style.display = 'none';
+    chartContainer.classList.remove('active');
+  }
+
+  function processFiles(files) {
+    allFiles = files;
+    currentView = 'all';
+    if (!allFiles.length) {
+      results.innerHTML = '<div class="no-result">😕 Không có file nào được chọn</div>';
+      return;
+    }
+    const exts = [...new Set(allFiles.map(f => f.ext))].sort((a,b) => {
+      if (a === '') return 1;
+      if (b === '') return -1;
+      return a.localeCompare(b);
+    });
+    extFilter.innerHTML = '<option value="">Mọi loại</option>' +
+      exts.map(e => '<option value="' + e + '">' + (e ? '.' + e : '(không đuôi)') + '</option>').join('');
+
+    searchPanel.classList.add('active');
+    stats.style.display = 'flex';
+    pickButtons.style.display = 'none';
+    dropZone.style.display = 'none';
+    resetBtn.style.display = 'inline-block';
+    toolbar.style.display = 'flex';
+
+    $('totalCount').textContent = allFiles.length;
+    $('totalSize').textContent = formatSize(allFiles.reduce((s, f) => s + f.size, 0));
+    filterFiles();
+  }
+
+  // ===== LỌC + SẮP XẾP =====
+  function filterFiles() {
+    if (currentView === 'duplicates') return;
+    const q = searchInput.value.toLowerCase().trim();
+    const ext = extFilter.value;
+    const sizeRange = sizeFilter.value;
+    const dateDays = dateFilter.value;
+    const sort = sortFilter.value;
+
+    let filtered = allFiles.filter(f => {
+      if (q && !f.name.toLowerCase().includes(q) && !f.path.toLowerCase().includes(q)) return false;
+      if (ext !== '' && f.ext !== ext) return false;
+      if (sizeRange) {
+        const parts = sizeRange.split('-');
+        const min = Number(parts[0]), max = Number(parts[1]);
+        if (f.size < min || f.size > max) return false;
+      }
+      if (dateDays) {
+        const days = parseInt(dateDays);
+        const limit = Date.now() - days * 86400000;
+        if (f.lastModified < limit) return false;
+      }
+      return true;
+    });
+
+    const sortParts = sort.split('-');
+    const field = sortParts[0], order = sortParts[1];
+    filtered.sort((a, b) => {
+      let v = 0;
+      if (field === 'name') v = a.name.localeCompare(b.name, 'vi');
+      else if (field === 'size') v = a.size - b.size;
+      else if (field === 'date') v = a.lastModified - b.lastModified;
+      return order === 'desc' ? -v : v;
+    });
+
+    currentFiles = filtered;
+    renderResults(filtered);
+
+    if (q) {
+      clearTimeout(window._histTimer);
+      window._histTimer = setTimeout(() => addHistory(q), 1200);
+    }
+  }
+
+  let timer;
+  searchInput.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(filterFiles, 120); });
+  extFilter.addEventListener('change', filterFiles);
+  sizeFilter.addEventListener('change', filterFiles);
+  dateFilter.addEventListener('change', filterFiles);
+  sortFilter.addEventListener('change', filterFiles);
+
+  // ===== HIỂN THỊ =====
+  function renderResults(files) {
+    $('resultCount').textContent = files.length;
+    if (!files.length) {
+      results.innerHTML = '<div class="no-result">😕 Không có file nào khớp</div>';
+      return;
+    }
+    const LIMIT = 300;
+    let html = '';
+    files.slice(0, LIMIT).forEach(f => {
+      html += '<div class="file-item' + (f._dup ? ' duplicate' : '') + '" data-key="' + f.key + '">' +
+        '<div class="icon">' + getIcon(f.ext) + '</div>' +
+        '<div class="info">' +
+          '<div class="name">' + escapeHtml(f.name) + '</div>' +
+          '<div class="path">' + escapeHtml(f.path) + '</div>' +
+        '</div>' +
+        (f.ext ? '<div class="ext-badge">' + escapeHtml(f.ext) + '</div>' : '') +
+        '<div class="size">' + formatSize(f.size) + '</div>' +
+      '</div>';
+    });
+    if (files.length > LIMIT) {
+      html += '<div class="no-result">... và ' + (files.length - LIMIT) + ' file khác</div>';
+    }
+    results.innerHTML = html;
+
+    results.querySelectorAll('.file-item').forEach(item => {
+      item.addEventListener('click', () => showPreview(item.dataset.key));
+    });
+  }
+
+  // ===== XEM TRƯỚC =====
+  function showPreview(key) {
+    const f = rawFiles[key];
+    const info = allFiles.find(x => x.key === key);
+    if (!f || !info) return;
+
+    $('modalTitle').textContent = info.name;
+    const preview = $('modalPreview');
+    preview.innerHTML = '';
+
+    if (f.type && f.type.indexOf('image/') === 0) {
+      const url = URL.createObjectURL(f);
+      preview.innerHTML = '<img src="' + url + '" alt="preview">';
+    } else if (f.type === 'application/pdf' || info.ext === 'pdf') {
+      const url = URL.createObjectURL(f);
+      preview.innerHTML = '<iframe src="' + url + '"></iframe>';
+    } else if (f.type && f.type.indexOf('video/') === 0) {
+      const url = URL.createObjectURL(f);
+      preview.innerHTML = '<video src="' + url + '" controls></video>';
+    } else if (f.type && f.type.indexOf('audio/') === 0) {
+      const url = URL.createObjectURL(f);
+      preview.innerHTML = '<audio src="' + url + '" controls></audio>';
+    } else if ((f.type && f.type.indexOf('text/') === 0) || 
+      ['txt','md','json','xml','js','ts','css','html','py','java','c','cpp','sql','yml','yaml','csv','log'].indexOf(info.ext) >= 0) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const text = e.target.result.slice(0, 5000);
+        preview.innerHTML = '<pre>' + escapeHtml(text) + (e.target.result.length > 5000 ? '\n\n... (đã cắt bớt)' : '') + '</pre>';
+      };
+      reader.readAsText(f);
+    } else {
+      preview.innerHTML = '<div style="text-align:center;padding:30px;font-size:48px;">📄</div>' +
+        '<div style="text-align:center;color:var(--text-sub);">Không hỗ trợ xem trước loại này</div>';
+    }
+
+    $('modalInfo').innerHTML = 
+      '<b>Đường dẫn:</b> ' + escapeHtml(info.path) + '<br>' +
+      '<b>Kích thước:</b> ' + formatSize(info.size) + '<br>' +
+      '<b>Loại:</b> ' + escapeHtml(f.type || 'không rõ') + '<br>' +
+      '<b>Sửa lần cuối:</b> ' + (info.lastModified ? new Date(info.lastModified).toLocaleString('vi-VN') : 'N/A');
+
+    $('modal').classList.add('active');
+  }
+
+  $('modalClose').addEventListener('click', closeModal);
+  $('modal').addEventListener('click', e => { if (e.target === $('modal')) closeModal(); });
+  function closeModal() {
+    $('modal').classList.remove('active');
+    document.querySelectorAll('#modalPreview img, #modalPreview iframe, #modalPreview video, #modalPreview audio').forEach(el => {
+      if (el.src && el.src.indexOf('blob:') === 0) URL.revokeObjectURL(el.src);
+    });
+  }
+
+  // ===== XUẤT CSV =====
+  $('exportBtn').addEventListener('click', () => {
+    if (!currentFiles.length) { alert('Không có file nào để xuất!'); return; }
+    const rows = [['Tên file','Đường dẫn','Loại','Kích thước (bytes)','Kích thước','Sửa lần cuối']];
+    currentFiles.forEach(f => {
+      rows.push([
+        f.name, f.path, f.ext || '(không đuôi)', f.size, formatSize(f.size),
+        f.lastModified ? new Date(f.lastModified).toLocaleString('vi-VN') : ''
+      ]);
+    });
+    const csv = '\uFEFF' + rows.map(r => 
+      r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')
+    ).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'thien-minh-files-' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  // ===== TÌM TRÙNG LẶP =====
+  $('dupBtn').addEventListener('click', () => {
+    if (!allFiles.length) return;
+    if (currentView === 'duplicates') {
+      currentView = 'all';
+      $('dupBtn').textContent = '🗑️ Trùng lặp';
+      allFiles.forEach(f => f._dup = false);
+      filterFiles();
+      return;
+    }
+    // Group theo name + size
+    const groups = {};
+    allFiles.forEach(f => {
+      const k = f.name.toLowerCase() + '|' + f.size;
+      if (!groups[k]) groups[k] = [];
+      groups[k].push(f);
+    });
+    const dups = [];
+    Object.keys(groups).forEach(k => {
+      if (groups[k].length > 1) {
+        groups[k].forEach(f => { f._dup = true; dups.push(f); });
+      }
+    });
+    if (!dups.length) {
+      alert('✅ Không tìm thấy file trùng lặp nào!');
+      return;
+    }
+    currentView = 'duplicates';
+    $('dupBtn').textContent = '↩️ Bỏ lọc trùng';
+    currentFiles = dups;
+    renderResults(dups);
+    $('resultCount').textContent = dups.length;
+  });
+
+  // ===== BIỂU ĐỒ =====
+  $('chartBtn').addEventListener('click', () => {
+    if (!allFiles.length) return;
+    if (chartContainer.classList.contains('active')) {
+      chartContainer.classList.remove('active');
+      return;
+    }
+    // Group theo đuôi file
+    const groups = {};
+    allFiles.forEach(f => {
+      const k = f.ext || '(không đuôi)';
+      if (!groups[k]) groups[k] = { count: 0, size: 0 };
+      groups[k].count++;
+      groups[k].size += f.size;
+    });
+    const sorted = Object.entries(groups).sort((a,b) => b[1].size - a[1].size).slice(0, 8);
+    const totalSize = sorted.reduce((s, x) => s + x[1].size, 0);
+    const colors = ['#1e3c72','#2a5298','#4a7bc8','#60a5fa','#93c5fd','#f39c12','#27ae60','#e74c3c'];
+
+    let barHtml = '', legendHtml = '';
+    sorted.forEach((item, i) => {
+      const pct = (item[1].size / totalSize * 100).toFixed(1);
+      const color = colors[i % colors.length];
+      barHtml += '<div class="chart-segment" style="width:' + pct + '%;background:' + color + ';" title="' + item[0] + '"></div>';
+      legendHtml += '<div class="legend-item"><div class="legend-dot" style="background:' + color + ';"></div>' +
+        '.' + escapeHtml(item[0]) + ' (' + item[1].count + ' file, ' + formatSize(item[1].size) + ')</div>';
+    });
+    $('chartBar').innerHTML = barHtml;
+    $('chartLegend').innerHTML = legendHtml;
+    chartContainer.classList.add('active');
+  });
+
+  // ===== RESET =====
+  resetBtn.addEventListener('click', () => {
+    allFiles = []; currentFiles = []; rawFiles = {}; currentView = 'all';
+    fileInput.value = ''; folderInput.value = '';
+    searchInput.value = ''; sizeFilter.value = ''; dateFilter.value = '';
+    sortFilter.value = 'name-asc';
+    extFilter.innerHTML = '<option value="">Mọi loại</option>';
+    results.innerHTML = '';
+    searchPanel.classList.remove('active');
+    stats.style.display = 'none';
+    pickButtons.style.display = 'flex';
+    if (!isIOS && !isMobile) dropZone.style.display = 'block';
+    resetBtn.style.display = 'none';
+    toolbar.style.display = 'none';
+    chartContainer.classList.remove('active');
+    $('dupBtn').textContent = '🗑️ Trùng lặp';
+  });
+
+  // ===== HELPERS =====
+  function getExt(name) {
+    const i = name.lastIndexOf('.');
+    if (i <= 0) return '';
+    const ext = name.slice(i + 1).toLowerCase();
+    return ext.length > 8 || ext.indexOf('/') >= 0 ? '' : ext;
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1073741824).toFixed(2) + ' GB';
+  }
+
+  function getIcon(ext) {
+    const icons = {
+      jpg:'🖼️',jpeg:'🖼️',png:'🖼️',gif:'🖼️',svg:'🖼️',webp:'🖼️',bmp:'🖼️',heic:'🖼️',heif:'🖼️',
+      mp4:'🎬',avi:'🎬',mkv:'🎬',mov:'🎬',webm:'🎬',m4v:'🎬',
+      mp3:'🎵',wav:'🎵',flac:'🎵',m4a:'🎵',ogg:'🎵',aac:'🎵',
+      pdf:'📕',doc:'📘',docx:'📘',txt:'📄',md:'📄',rtf:'📄',
+      xls:'📊',xlsx:'📊',csv:'📊',ppt:'📙',pptx:'📙',
+      zip:'🗜️',rar:'🗜️','7z':'🗜️',tar:'🗜️',gz:'🗜️',
+      exe:'⚙️',msi:'⚙️',dmg:'⚙️',apk:'📱',ipa:'📱',iso:'💿',
+      js:'💛',ts:'💙',html:'🧡',css:'💜',py:'🐍',java:'☕',
+      json:'📋',xml:'📋',yml:'📋',yaml:'📋'
+    };
+    return icons[ext] || '📄';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+})();
+</script>
+</body>
+</html>
