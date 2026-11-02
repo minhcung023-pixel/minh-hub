@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tìm File">
+<meta name="theme-color" content="#1e3c72">
+<title>🔍 Tìm File</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom);
+  }
+  body { padding-top: calc(20px + env(safe-area-inset-top)); padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 20px;
+    padding: 24px 18px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  h1 { color: #1e3c72; text-align: center; margin-bottom: 6px; font-size: 22px; }
+  .subtitle { text-align: center; color: #888; font-size: 13px; margin-bottom: 20px; }
+
+  .pick-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+  .pick-btn {
+    flex: 1; min-width: 140px; padding: 16px;
+    border: 2px dashed #2a5298; border-radius: 14px;
+    background: #f5f8ff; text-align: center; cursor: pointer;
+    transition: all 0.2s; font-size: 14px; color: #1e3c72; font-weight: 600;
+  }
+  .pick-btn:hover, .pick-btn:active { background: #e6efff; }
+  .pick-btn .icon { font-size: 32px; display: block; margin-bottom: 6px; }
+  .pick-btn small { display: block; color: #888; font-weight: normal; font-size: 11px; margin-top: 4px; }
+
+  .drop-zone {
+    border: 3px dashed #2a5298; border-radius: 14px; padding: 24px;
+    text-align: center; background: #f5f8ff; margin-top: 10px; transition: all 0.2s;
+  }
+  .drop-zone.dragover { background: #e6efff; border-color: #1e3c72; }
+
+  .search-panel { margin-top: 20px; display: none; gap: 8px; flex-wrap: wrap; }
+  .search-panel.active { display: flex; }
+  .search-panel input, .search-panel select {
+    padding: 12px; border: 2px solid #e0e0e0; border-radius: 10px;
+    font-size: 16px; transition: border 0.3s; font-family: inherit; background: white;
+    width: 100%;
+  }
+  .search-panel input:focus, .search-panel select:focus { outline: none; border-color: #2a5298; }
+  #searchInput { flex: 1; min-width: 200px; }
+  .filter-row { display: flex; gap: 8px; width: 100%; flex-wrap: wrap; }
+  .filter-row select { flex: 1; min-width: 140px; }
+
+  .stats { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; color: #555; }
+  .stat-box { background: #f0f4ff; padding: 10px 12px; border-radius: 10px; flex: 1; min-width: 90px; }
+  .stat-box strong { color: #1e3c72; font-size: 16px; display: block; }
+
+  .results {
+    margin-top: 16px; max-height: 60vh; overflow-y: auto;
+    -webkit-overflow-scrolling: touch; border-radius: 12px;
+  }
+  .file-item {
+    display: flex; align-items: center; padding: 12px 10px;
+    border-bottom: 1px solid #eee; transition: background 0.2s;
+  }
+  .file-item:active { background: #f5f8ff; }
+  .file-item .icon { font-size: 22px; margin-right: 10px; width: 30px; text-align: center; flex-shrink: 0; }
+  .file-item .info { flex: 1; min-width: 0; }
+  .file-item .name {
+    color: #333; font-weight: 600; font-size: 14px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .file-item .path {
+    color: #999; font-size: 11px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
+  }
+  .file-item .size { color: #666; font-size: 11px; margin-left: 8px; white-space: nowrap; flex-shrink: 0; }
+  .file-item .ext-badge {
+    background: #e6efff; color: #2a5298; padding: 2px 6px;
+    border-radius: 6px; font-size: 10px; font-weight: bold;
+    margin-left: 6px; text-transform: uppercase; flex-shrink: 0;
+  }
+  .no-result { text-align: center; padding: 40px 20px; color: #999; }
+  .loading { text-align: center; padding: 20px; color: #2a5298; font-weight: 600; }
+  .spinner {
+    border: 4px solid #e0e0e0; border-top: 4px solid #2a5298;
+    border-radius: 50%; width: 30px; height: 30px;
+    animation: spin 1s linear infinite; margin: 0 auto 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .reset-btn {
+    margin-top: 10px; padding: 10px 16px; background: #f0f4ff;
+    color: #2a5298; border: none; border-radius: 10px;
+    font-weight: 600; cursor: pointer; font-size: 13px;
+  }
+  .reset-btn:active { background: #e0e8ff; }
+  .hidden-input { display: none; }
+  .ios-notice {
+    background: #fff8e1; border-left: 4px solid #ffc107;
+    padding: 12px 14px; border-radius: 8px; margin-top: 12px;
+    font-size: 13px; color: #856404; line-height: 1.5;
+  }
+  @media (max-width: 480px) {
+    .container { padding: 18px 12px; border-radius: 16px; }
+    h1 { font-size: 19px; }
+    .pick-btn { padding: 14px 8px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔍 Tool Tìm File</h1>
+  <p class="subtitle">Chạy online — hoạt động trên iOS, Android, máy tính</p>
+
+  <div id="iosNotice" class="ios-notice" style="display:none;">
+    📱 <strong>Trên iPhone/iPad:</strong> Nhấn <b>"Chọn file"</b> → trong app Files, chọn nhiều file (nhấn giữ để chọn hàng loạt) từ iCloud Drive hoặc "On My iPhone".
+  </div>
+
+  <div class="pick-buttons" id="pickButtons">
+    <label class="pick-btn" for="folderInput" id="folderBtn">
+      <span class="icon">📁</span>
+      Chọn thư mục
+      <small>Máy tính</small>
+    </label>
+    <label class="pick-btn" for="fileInput">
+      <span class="icon">📄</span>
+      Chọn file
+      <small>Mọi thiết bị</small>
+    </label>
+  </div>
+
+  <div class="drop-zone" id="dropZone">
+    <div style="font-size:32px;">⬇️</div>
+    <div style="color:#555; font-size:13px; margin-top:4px;">Hoặc kéo thả file / thư mục (máy tính)</div>
+  </div>
+
+  <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden-input">
+  <input type="file" id="fileInput" multiple class="hidden-input">
+
+  <div class="search-panel" id="searchPanel">
+    <input type="text" id="searchInput" placeholder="🔎 Tìm theo tên file..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <div class="filter-row">
+      <select id="extFilter"><option value="">Mọi loại file</option></select>
+      <select id="sizeFilter">
+        <option value="">Mọi kích thước</option>
+        <option value="0-102400">Nhỏ (&lt; 100KB)</option>
+        <option value="102400-1048576">100KB – 1MB</option>
+        <option value="1048576-10485760">1MB – 10MB</option>
+        <option value="10485760-104857600">10MB – 100MB</option>
+        <option value="104857600-999999999999">Lớn (&gt; 100MB)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="stats" id="stats" style="display:none;">
+    <div class="stat-box">Tổng file<strong id="totalCount">0</strong></div>
+    <div class="stat-box">Kết quả<strong id="resultCount">0</strong></div>
+    <div class="stat-box">Dung lượng<strong id="totalSize">0 B</strong></div>
+  </div>
+
+  <div class="results" id="results"></div>
+  <button class="reset-btn" id="resetBtn" style="display:none;">🔄 Chọn lại</button>
+</div>
+
+<script>
+(function() {
+  const folderInput = document.getElementById('folderInput');
+  const fileInput = document.getElementById('fileInput');
+  const dropZone = document.getElementById('dropZone');
+  const pickButtons = document.getElementById('pickButtons');
+  const searchPanel = document.getElementById('searchPanel');
+  const searchInput = document.getElementById('searchInput');
+  const extFilter = document.getElementById('extFilter');
+  const sizeFilter = document.getElementById('sizeFilter');
+  const results = document.getElementById('results');
+  const stats = document.getElementById('stats');
+  const resetBtn = document.getElementById('resetBtn');
+
+  let allFiles = [];
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+  if (isIOS) {
+    document.getElementById('iosNotice').style.display = 'block';
+    document.getElementById('folderBtn').style.display = 'none';
+    dropZone.style.display = 'none';
+  }
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) {
+      processFiles(Array.from(fileInput.files).map(f => ({
+        name: f.name,
+        path: f.webkitRelativePath || f.name,
+        size: f.size,
+        ext: getExt(f.name)
+      })));
+    }
+  });
+
+  folderInput.addEventListener('change', () => {
+    if (folderInput.files.length) {
+      processFiles(Array.from(folderInput.files).map(f => ({
+        name: f.name,
+        path: f.webkitRelativePath || f.name,
+        size: f.size,
+        ext: getExt(f.name)
+      })));
+    }
+  });
+
+  ['dragenter','dragover'].forEach(evt => {
+    dropZone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.add('dragover'); });
+  });
+  ['dragleave','drop'].forEach(evt => {
+    dropZone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('dragover'); });
+  });
+  dropZone.addEventListener('drop', async e => {
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    if (dt.items && dt.items.length && dt.items[0].webkitGetAsEntry) {
+      showLoading();
+      const files = [];
+      const entries = [];
+      for (const item of dt.items) {
+        const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+        if (entry) entries.push(entry);
+      }
+      if (entries.length) {
+        for (const entry of entries) await traverseEntry(entry, files);
+        processFiles(files);
+        return;
+      }
+    }
+    if (dt.files && dt.files.length) {
+      processFiles(Array.from(dt.files).map(f => ({
+        name: f.name,
+        path: f.webkitRelativePath || f.name,
+        size: f.size,
+        ext: getExt(f.name)
+      })));
+    }
+  });
+
+  function traverseEntry(entry, files) {
+    return new Promise(resolve => {
+      if (entry.isFile) {
+        entry.file(f => {
+          files.push({ name: f.name, path: entry.fullPath || f.name, size: f.size, ext: getExt(f.name) });
+          resolve();
+        }, () => resolve());
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const readAll = () => {
+          reader.readEntries(async entries => {
+            if (entries.length === 0) return resolve();
+            for (const e of entries) await traverseEntry(e, files);
+            readAll();
+          }, () => resolve());
+        };
+        readAll();
+      } else resolve();
+    });
+  }
+
+  function showLoading() {
+    results.innerHTML = '<div class="loading"><div class="spinner"></div>Đang quét file...</div>';
+    stats.style.display = 'none';
+    searchPanel.classList.remove('active');
+  }
+
+  function processFiles(files) {
+    allFiles = files;
+    if (!allFiles.length) {
+      results.innerHTML = '<div class="no-result">😕 Không có file nào được chọn</div>';
+      return;
+    }
+    const exts = [...new Set(allFiles.map(f => f.ext))].sort((a,b) => {
+      if (a === '') return 1;
+      if (b === '') return -1;
+      return a.localeCompare(b);
+    });
+    extFilter.innerHTML = '<option value="">Mọi loại file</option>' +
+      exts.map(e => `<option value="${e}">${e ? '.' + e : '(không đuôi)'}</option>`).join('');
+
+    searchPanel.classList.add('active');
+    stats.style.display = 'flex';
+    pickButtons.style.display = 'none';
+    dropZone.style.display = 'none';
+    resetBtn.style.display = 'inline-block';
+
+    document.getElementById('totalCount').textContent = allFiles.length;
+    document.getElementById('totalSize').textContent = formatSize(allFiles.reduce((s, f) => s + f.size, 0));
+    renderResults(allFiles);
+  }
+
+  function getExt(name) {
+    const i = name.lastIndexOf('.');
+    if (i <= 0) return '';
+    const ext = name.slice(i + 1).toLowerCase();
+    return ext.length > 8 || ext.includes('/') ? '' : ext;
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1073741824).toFixed(2) + ' GB';
+  }
+
+  function getIcon(ext) {
+    const icons = {
+      jpg:'🖼️', jpeg:'🖼️', png:'🖼️', gif:'🖼️', svg:'🖼️', webp:'🖼️', bmp:'🖼️', heic:'🖼️', heif:'🖼️',
+      mp4:'🎬', avi:'🎬', mkv:'🎬', mov:'🎬', webm:'🎬',
+      mp3:'🎵', wav:'🎵', flac:'🎵', m4a:'🎵', ogg:'🎵',
+      pdf:'📕', doc:'📘', docx:'📘', txt:'📄', md:'📄', rtf:'📄',
+      xls:'📊', xlsx:'📊', csv:'📊',
+      ppt:'📙', pptx:'📙',
+      zip:'🗜️', rar:'🗜️', '7z':'🗜️', tar:'🗜️', gz:'🗜️',
+      exe:'⚙️', msi:'⚙️', dmg:'⚙️', apk:'📱', ipa:'📱', iso:'💿',
+      js:'💛', ts:'💙', html:'🧡', css:'💜', py:'🐍', java:'☕',
+      json:'📋', xml:'📋', yml:'📋', yaml:'📋'
+    };
+    return icons[ext] || '📄';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderResults(files) {
+    document.getElementById('resultCount').textContent = files.length;
+    if (!files.length) {
+      results.innerHTML = '<div class="no-result">😕 Không có file nào khớp</div>';
+      return;
+    }
+    const LIMIT = 300;
+    results.innerHTML = files.slice(0, LIMIT).map(f => `
+      <div class="file-item">
+        <div class="icon">${getIcon(f.ext)}</div>
+        <div class="info">
+          <div class="name">${escapeHtml(f.name)}</div>
+          <div class="path">${escapeHtml(f.path)}</div>
+        </div>
+        ${f.ext ? `<div class="ext-badge">${escapeHtml(f.ext)}</div>` : ''}
+        <div class="size">${formatSize(f.size)}</div>
+      </div>
+    `).join('') + (files.length > LIMIT 
+      ? `<div class="no-result">... và ${files.length - LIMIT} file khác</div>` : '');
+  }
+
+  function filterFiles() {
+    const q = searchInput.value.toLowerCase().trim();
+    const ext = extFilter.value;
+    const sizeRange = sizeFilter.value;
+    let filtered = allFiles;
+    if (q) filtered = filtered.filter(f => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q));
+    if (ext !== '') filtered = filtered.filter(f => f.ext === ext);
+    if (sizeRange) {
+      const [min, max] = sizeRange.split('-').map(Number);
+      filtered = filtered.filter(f => f.size >= min && f.size <= max);
+    }
+    renderResults(filtered);
+  }
+
+  let timer;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(filterFiles, 120);
+  });
+  extFilter.addEventListener('change', filterFiles);
+  sizeFilter.addEventListener('change', filterFiles);
+
+  resetBtn.addEventListener('click', () => {
+    allFiles = [];
+    fileInput.value = '';
+    folderInput.value = '';
+    searchInput.value = '';
+    sizeFilter.value = '';
+    extFilter.innerHTML = '<option value="">Mọi loại file</option>';
+    results.innerHTML = '';
+    searchPanel.classList.remove('active');
+    stats.style.display = 'none';
+    pickButtons.style.display = 'flex';
+    if (!isIOS) dropZone.style.display = 'block';
+    resetBtn.style.display = 'none';
+  });
+
+  // Chống zoom khi nhập trên iOS
+  if (isIOS) {
+    document.querySelectorAll('input, select').forEach(el => {
+      el.style.fontSize = '16px';
+    });
+  }
+})();
+</script>
+</body>
+</html>
