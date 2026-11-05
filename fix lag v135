@@ -1,0 +1,132 @@
+-- MINH FIX LAG v135: BẦU TRỜI ĐEN TUYỀN (No Skybox)
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local player = Players.LocalPlayer
+
+print("[MINH v135] Đang xoá sạch bầu trời...")
+
+-- 1. BẢO VỆ NGƯỜI CHƠI
+local function protect(char)
+    if char then
+        for _, p in pairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p:SetAttribute("VIP", true) end
+        end
+    end
+end
+for _, plr in pairs(Players:GetPlayers()) do 
+    protect(plr.Character) 
+    plr.CharacterAdded:Connect(protect) 
+end
+Players.PlayerAdded:Connect(function(plr) plr.CharacterAdded:Connect(protect) end)
+
+-- 2. HÀM DIỆT HIỆU ỨNG
+local function clearEffects()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr.Character and plr ~= player then
+            for _, v in pairs(plr.Character:GetDescendants()) do
+                pcall(function()
+                    if v:IsA("Smoke") or v:IsA("Fire") or v:IsA("ParticleEmitter") or v:IsA("Sparkles") or v:IsA("Beam") or v:IsA("Trail") then
+                        v:Destroy()
+                    end
+                end)
+            end
+        end
+    end
+end
+
+-- 3. HÀM TỐI ƯU MAP
+local function optimize()
+    local count = 0
+    
+    -- LÀM PHẲNG MẶT ĐẤT
+    pcall(function()
+        local terrain = Workspace:FindFirstChildOfClass("Terrain")
+        if terrain then
+            local region = Region3.new(Vector3.new(-10000, -10000, -10000), Vector3.new(10000, 10000, 10000))
+            terrain:ReplaceMaterial(region, 4, Enum.Material.SmoothPlastic, Enum.Material.SmoothPlastic)
+            count = count + 1
+        end
+    end)
+
+    -- XOÁ SẠCH BẦU TRỜI
+    pcall(function()
+        for _, v in pairs(Lighting:GetChildren()) do
+            if v:IsA("Sky") or v:IsA("Atmosphere") or v:IsA("Clouds") or v:IsA("PostEffect") then v:Destroy() end
+        end
+        
+        -- Tạo một Skybox trống (Đen thui)
+        local sky = Instance.new("Sky", Lighting)
+        sky.SkyboxBk = "" 
+        sky.SkyboxDn = "" 
+        sky.SkyboxFt = "" 
+        sky.SkyboxLf = "" 
+        sky.SkyboxRt = "" 
+        sky.SkyboxUp = "" 
+        sky.StarCount = 0 -- Đéo có sao
+        sky.CelestialBodiesShown = false
+        
+        -- Ánh sáng vừa phải
+        Lighting.GlobalShadows = false 
+        Lighting.FogEnd = 9e9
+        Lighting.Brightness = 2 
+        Lighting.ClockTime = 0 
+        Lighting.Ambient = Color3.fromRGB(130, 130, 130) 
+        Lighting.OutdoorAmbient = Color3.fromRGB(110, 110, 110)
+    end)
+
+    for _, plr in pairs(Players:GetPlayers()) do 
+        if plr.Character then protect(plr.Character) end 
+    end
+
+    -- QUÉT PART (XOÁ CÂY CỐI)
+    for _, v in pairs(Workspace:GetDescendants()) do
+        pcall(function()
+            if v:GetAttribute("VIP") then return end
+            if v.Parent and v.Parent:FindFirstChildOfClass("Humanoid") then return end
+            
+            local name = string.lower(v.Name)
+            
+            if v:IsA("Smoke") or v:IsA("Fire") or v:IsA("ParticleEmitter") or v:IsA("Sparkles") or v:IsA("Beam") or v:IsA("Trail") or v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") or v:IsA("Sound") or v:IsA("SurfaceAppearance") then
+                v:Destroy() count = count + 1
+            elseif v:IsA("Texture") or v:IsA("Decal") then
+                v:Destroy() count = count + 1
+            elseif v:IsA("MeshPart") or v:IsA("SpecialMesh") then
+                v.TextureID = "" 
+                if v:IsA("SpecialMesh") then v.MeshId = "" end
+                count = count + 1
+            elseif v:IsA("BasePart") then
+                local isPlant = string.find(name, "grass") or string.find(name, "tree") or string.find(name, "leaf") or string.find(name, "cay") or string.find(name, "hoa") or string.find(name, "bush")
+                
+                -- Nếu là cây to (kích thước lớn) hoặc có tên cây -> Ẩn
+                if isPlant or (v.Size.X > 20 and v.Size.Y > 20 and v.Size.Z > 20 and not (v.Size.X > 100 and v.Size.Z > 100)) then
+                    v.Transparency = 1 
+                    count = count + 1
+                else
+                    v.Material = Enum.Material.SmoothPlastic 
+                    v.CastShadow = false 
+                    v.Reflectance = 0
+                end
+            end
+        end)
+    end
+    print("[MINH v135] Đã quét map. Số vật thể: " .. tostring(count))
+end
+
+-- Chạy lần đầu
+optimize()
+clearEffects()
+
+-- Vòng lặp diệt khói
+task.spawn(function()
+    while task.wait(0.2) do 
+        pcall(clearEffects)
+    end
+end)
+
+-- Auto khi respawn
+player.CharacterAdded:Connect(function(char)
+    task.wait(2)
+    optimize()
+    clearEffects()
+end)
